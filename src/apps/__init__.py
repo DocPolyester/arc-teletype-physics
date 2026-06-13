@@ -1,0 +1,1 @@
+"""Arc application module"""

@@ -1,0 +1,105 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Deploy to Pi (quick)",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "deploy"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Deploy & Install",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "full"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Deploy & Start Service",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "deploy"],
+            "dependsOn": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always"
+            }
+        },
+        {
+            "label": "Start Service",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "start"],
+            "presentation": {
+                "reveal": "always",
+                "focus": true
+            }
+        },
+        {
+            "label": "Stop Service",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "stop"],
+            "presentation": {
+                "reveal": "always"
+            }
+        },
+        {
+            "label": "View Logs",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "logs"],
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Service Status",
+            "type": "shell",
+            "command": "bash",
+            "args": ["scripts/deploy.sh", "status"],
+            "presentation": {
+                "reveal": "always",
+                "focus": true
+            }
+        },
+        {
+            "label": "Install SSH Key",
+            "type": "shell",
+            "command": "ssh-copy-id",
+            "args": ["pi@monome-arc.local"],
+            "presentation": {
+                "reveal": "always",
+                "focus": true
+            }
+        },
+        {
+            "label": "Test SSH Connection",
+            "type": "shell",
+            "command": "ssh",
+            "args": ["pi@monome-arc.local", "echo 'SSH connection successful!'"],
+            "presentation": {
+                "reveal": "always"
+            }
+        }
+    ]
+}

@@ -1,0 +1,87 @@
+# Arc Cycles
+
+Physics-based LED animations for the monome Arc on a Raspberry Pi A+. Six independent physics models (Cycles, Pendulum, Gravity, Spring, Orbit, Swing) drive the four rings. A Monome Teletype can read state values and control the active mode via an Arduino Nano V3.0 acting as an I2C bridge.
+
+## Hardware
+
+| Device | Connection | Address / Port |
+|--------|-----------|----------------|
+| Monome Arc (4 rings) | USB → serialosc | `/dev/ttyUSB0`, OSC port 14951 |
+| Arduino Nano V3.0 | USB → `/dev/ttyUSB1` | I2C slave 0x31 (= 49 decimal) |
+| Teletype I2C bus | A4/A5/GND on Nano | `IIA 49` |
+
+4.7 kΩ pull-up resistors on SDA and SCL (to 3.3 V) are required.
+
+## Physics Modes
+
+| Nr | Name | Description |
+|----|------|-------------|
+| 1 | Cycles | Rotating dot with inertia and friction |
+| 2 | Pendulum | Harmonic pendulum, 4 different periods |
+| 3 | Gravity | Particles under gravity with bouncing |
+| 4 | Spring | Spring mechanics with resonance effects |
+| 5 | Orbit | Orbital model with multiple bodies per ring |
+| 6 | Swing | Nonlinear pendulum (exact ODE, RK4 integration) |
+
+Details: [docs/PHYSICS_MODES.md](docs/PHYSICS_MODES.md)
+
+## Teletype Control
+
+```
+IIA 49       ; set I2C address (once)
+IIS 1        ; mode: Cycles
+IIS 6        ; mode: Swing
+IIS 91       ; portrait orientation (270°)
+IIS 90       ; horizontal orientation (default)
+IIS 99       ; shut down Pi
+
+IIQ 10       ; Ring 1 position  (0–5000)
+IIQ 11       ; Ring 1 velocity  (±5000)
+IIQ 12       ; Ring 1 angle     (±5000)
+IIQ 13       ; Ring 1 param1    (0–5000)
+; Rings 2–4: IIQ 2x / 3x / 4x
+```
+
+Full reference: [docs/TELETYPE_REFERENCE.md](docs/TELETYPE_REFERENCE.md)
+
+## Encoder Shortcuts
+
+| Action | Effect |
+|--------|--------|
+| Turn encoder | Interact with physics (mode-dependent) |
+| Press encoder | Reset that ring to initial state |
+| Press encoder 0 + 1 (within 2 s) | Shut down Pi |
+
+## Project Structure
+
+```
+src/
+  arc_cycles_app.py          # entry point
+  apps/arc_cycles/
+    main.py                  # ArcCyclesApp (loop, mode management)
+    mode_base.py             # base class, display routing
+    modes/
+      cycles_mode.py
+      pendulum_mode.py
+      gravity_mode.py
+      spring_mode.py
+      orbit_mode.py
+      swing_mode.py
+  hardware/
+    arc.py                   # serialosc / OSC receiver
+    arduino_serial.py        # Arduino serial bridge (IIS/IIQ)
+arduino/
+  teletype_bridge/           # Arduino firmware (I2C slave + serial)
+scripts/
+  deploy.sh                  # rsync deploy + service management
+config.yaml                  # start mode, Arc address, Arduino port
+```
+
+## Setup
+
+Full instructions: [QUICKSTART.md](QUICKSTART.md)
+
+## License
+
+MIT License — Copyright 2026 Doc Polyester.  
+Third-party licenses: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
