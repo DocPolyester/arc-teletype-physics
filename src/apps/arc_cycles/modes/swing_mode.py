@@ -54,7 +54,7 @@ class SwingMode(ArcMode):
     def on_encoder_turn(self, ring: int, delta: int):
         if 0 <= ring < self.num_rings:
             self.omega[ring] += delta * self.IMPULSE
-            logger.debug(f"Swing ring {ring}: omega={self.omega[ring]:.2f}")
+            # logger.debug(f"Swing ring {ring}: omega={self.omega[ring]:.2f}")
 
     def on_encoder_press(self, ring: int):
         if 0 <= ring < self.num_rings:

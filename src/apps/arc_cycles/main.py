@@ -2,6 +2,7 @@
 Arc Cycles Application - Main controller with mode management
 """
 import logging
+import queue
 import subprocess
 import time
 from typing import Dict, Optional
@@ -58,6 +59,7 @@ class ArcCyclesApp:
         self.frame_count = 0
         self.last_update = time.time()
         self._press_times: Dict[int, float] = {}   # ring → letzter Press-Zeitstempel
+        self._encoder_queue: queue.Queue = queue.Queue()
 
         # Connect I2C slave handler
         if self.i2c_slave:
@@ -108,7 +110,15 @@ class ArcCyclesApp:
         
         # Cap dt to prevent big jumps
         dt = min(dt, 0.05)
-        
+
+        # Drain encoder queue — process all pending events before physics update
+        while True:
+            try:
+                ring, delta = self._encoder_queue.get_nowait()
+                self.current_mode.on_encoder_turn(ring, delta)
+            except queue.Empty:
+                break
+
         # Update current mode
         self.current_mode.update(dt)
 
@@ -122,14 +132,8 @@ class ArcCyclesApp:
         self.frame_count += 1
     
     def on_encoder_turn(self, ring: int, delta: int):
-        """
-        Handle Arc encoder rotation.
-        
-        Args:
-            ring: Ring index (0-3)
-            delta: Rotation delta
-        """
-        self.current_mode.on_encoder_turn(ring, delta)
+        """Called from OSC thread — enqueue for processing in main loop."""
+        self._encoder_queue.put((ring, delta))
     
     def on_encoder_press(self, ring: int):
         """Handle Arc encoder press."""

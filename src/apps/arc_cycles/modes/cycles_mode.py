@@ -2,7 +2,6 @@
 Classic Cycles Mode
 """
 import logging
-import math
 from typing import List, Tuple
 from ..mode_base import ArcMode
 
@@ -30,11 +29,8 @@ class CyclesMode(ArcMode):
 
     def on_encoder_turn(self, ring: int, delta: int):
         if 0 <= ring < self.num_rings:
-            # normalize to ±1 per tick — large deltas don't spike speed
-            direction = math.copysign(1.0, delta)
-            self.speeds[ring] += direction * self.SENSITIVITY
+            self.speeds[ring] += delta * self.SENSITIVITY
             self.speeds[ring] = max(-self.MAX_SPEED, min(self.MAX_SPEED, self.speeds[ring]))
-            logger.info(f"enc ring={ring} delta={delta} speed={self.speeds[ring]:.3f}")
 
     def on_encoder_press(self, ring: int):
         if 0 <= ring < self.num_rings:

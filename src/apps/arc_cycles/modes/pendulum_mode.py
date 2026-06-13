@@ -57,7 +57,7 @@ class PendulumMode(ArcMode):
     def on_encoder_turn(self, ring: int, delta: int):
         """Encoder turn adds energy to pendulum."""
         self.encoder_force[ring] = delta * 2
-        logger.debug(f"Pendulum ring {ring}: impulse {delta}")
+        # logger.debug(f"Pendulum ring {ring}: impulse {delta}")
     
     def on_encoder_press(self, ring: int):
         """Reset pendulum to center."""

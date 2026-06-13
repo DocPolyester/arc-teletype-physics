@@ -65,7 +65,7 @@ class GravityMode(ArcMode):
     def on_encoder_turn(self, ring: int, delta: int):
         """Encoder creates upward impulse."""
         self.encoder_impulse[ring] = delta * 3
-        logger.debug(f"Gravity ring {ring}: impulse {delta}")
+        # logger.debug(f"Gravity ring {ring}: impulse {delta}")
     
     def on_encoder_press(self, ring: int):
         """Reset particles to top of ring."""

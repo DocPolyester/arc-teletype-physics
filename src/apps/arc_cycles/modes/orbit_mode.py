@@ -43,7 +43,7 @@ class OrbitMode(ArcMode):
     def on_encoder_turn(self, ring: int, delta: int):
         """Encoder turn changes angular velocity (like gravity assist)."""
         self.ang_accel[ring] += delta * 0.3
-        logger.debug(f"Orbit ring {ring}: angular accel += {delta * 0.3}")
+        # logger.debug(f"Orbit ring {ring}: angular accel += {delta * 0.3}")
     
     def on_encoder_press(self, ring: int):
         """Reset orbit on press."""

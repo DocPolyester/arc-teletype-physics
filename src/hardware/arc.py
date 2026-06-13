@@ -2,6 +2,8 @@
 Arc Controller - Handles serialosc/OSC communication with Monome Arc
 """
 import logging
+import socket
+import struct
 import threading
 from typing import Callable, List, Optional
 
@@ -10,6 +12,21 @@ from pythonosc import udp_client, dispatcher, osc_server
 logger = logging.getLogger(__name__)
 
 SERIALOSC_PORT = 12002
+
+
+def _build_ring_map_packet(prefix: str) -> bytes:
+    """
+    Pre-build the static OSC header for /prefix/ring/map.
+    The packet layout is:
+      [address (padded)] [type tag (padded)] [65 × int32 placeholder]
+    Only the 65 int32 data section is rebuilt per frame.
+    """
+    addr = f"{prefix}/ring/map".encode() + b"\x00"
+    addr += b"\x00" * ((4 - len(addr) % 4) % 4)
+    # type tag: ',' + 65 × 'i' (ring + 64 levels)
+    tag = b"," + b"i" * 65 + b"\x00"
+    tag += b"\x00" * ((4 - len(tag) % 4) % 4)
+    return addr + tag
 
 
 def discover_arc(host: str = "127.0.0.1", timeout: float = 2.0):
@@ -23,21 +40,18 @@ def discover_arc(host: str = "127.0.0.1", timeout: float = 2.0):
     def handle_device(addr, serial, device_type, port):
         logger.info(f"serialosc device found: {serial} ({device_type}) on port {port}")
         result["port"] = int(port)
-        # "monome arc 4" → 4, "monome arc 2" → 2, etc.
         for word in str(device_type).split():
             if word.isdigit():
                 result["rings"] = int(word)
                 break
         done.set()
 
-    listen_port = 12099
     d = dispatcher.Dispatcher()
     d.map("/serialosc/device", handle_device)
 
     for attempt_port in (12099, 12098, 12097):
         try:
             srv = osc_server.ThreadingOSCUDPServer((host, attempt_port), d)
-            listen_port = attempt_port
             break
         except OSError:
             continue
@@ -50,9 +64,8 @@ def discover_arc(host: str = "127.0.0.1", timeout: float = 2.0):
 
     client = udp_client.SimpleUDPClient(host, SERIALOSC_PORT)
 
-    # Retry up to 3× — serialosc-device may take a few seconds to connect at boot
     for attempt in range(3):
-        client.send_message("/serialosc/list", [host, listen_port])
+        client.send_message("/serialosc/list", [host, attempt_port])
         done.wait(timeout=timeout)
         if result["port"] is not None:
             break
@@ -69,7 +82,7 @@ def discover_arc(host: str = "127.0.0.1", timeout: float = 2.0):
 class ArcController:
     """
     Communicates with Monome Arc via serialosc/OSC protocol.
-    Uses python-osc for both sending and receiving.
+    Uses python-osc for control messages; fast raw UDP socket for ring/map.
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 14951, prefix: str = "/monome"):
@@ -84,7 +97,13 @@ class ArcController:
             logger.warning(f"Discovery failed, falling back to configured port {port}")
 
         self.client = udp_client.SimpleUDPClient(host, self.port)
-        self._server: Optional[osc_server.ThreadingOSCUDPServer] = None
+
+        # Fast raw UDP sender for ring/map (bypasses python-osc serialization overhead)
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._dest = (host, self.port)
+        self._ring_map_header = _build_ring_map_packet(prefix)
+
+        self._server: Optional[osc_server.BlockingOSCUDPServer] = None
         self._server_thread: Optional[threading.Thread] = None
         self.encoder_callback: Optional[Callable[[int, int], None]] = None
         self.press_callback:   Optional[Callable[[int], None]]      = None
@@ -97,8 +116,9 @@ class ArcController:
         self.client.send_message(f"{self.prefix}/ring/all", [ring, brightness])
 
     def set_ring_map(self, ring: int, levels: List[int]):
-        """Set all 64 LEDs on a ring atomically. levels: list of 64 ints (0-15)."""
-        self.client.send_message(f"{self.prefix}/ring/map", [ring] + list(levels))
+        """Set all 64 LEDs on a ring atomically — fast raw UDP path."""
+        packet = self._ring_map_header + struct.pack(">65i", ring, *levels)
+        self._sock.sendto(packet, self._dest)
 
     def clear_ring(self, ring: int):
         self.set_ring_all(ring, 0)
@@ -114,7 +134,6 @@ class ArcController:
         self.encoder_callback = encoder_callback
         self.press_callback   = press_callback
 
-        # Tell the Arc device where to send events
         self.client.send_message("/sys/host", ["127.0.0.1"])
         self.client.send_message("/sys/port", [listen_port])
 
@@ -122,8 +141,10 @@ class ArcController:
         d.map(f"{self.prefix}/enc/delta", self._handle_encoder_delta)
         d.map(f"{self.prefix}/enc/key",   self._handle_encoder_key)
 
-        self._server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", listen_port), d)
-        self._server_thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        # BlockingOSCUDPServer: single thread, no per-event thread creation overhead
+        self._server = osc_server.BlockingOSCUDPServer(("0.0.0.0", listen_port), d)
+        self._server_thread = threading.Thread(target=self._server.serve_forever,
+                                               daemon=True, name="osc-rx")
         self._server_thread.start()
         logger.info(f"OSC receiver started on port {listen_port}")
 
@@ -132,10 +153,11 @@ class ArcController:
             self.encoder_callback(ring, delta)
 
     def _handle_encoder_key(self, addr: str, ring: int, state: int):
-        if state == 1 and self.press_callback:   # nur Key-Down, nicht Key-Up
+        if state == 1 and self.press_callback:
             self.press_callback(ring)
 
     def close(self):
         if self._server:
             self._server.shutdown()
+        self._sock.close()
         logger.info("ArcController closed")

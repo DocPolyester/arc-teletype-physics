@@ -74,7 +74,7 @@ class SpringMode(ArcMode):
         self.resonance[ring] += abs(delta) * 0.5
         self.resonance[ring] = min(self.resonance[ring], 5.0)  # Cap it
         
-        logger.debug(f"Spring ring {ring}: resonance += {delta * 0.5}")
+        # logger.debug(f"Spring ring {ring}: resonance += {delta * 0.5}")
     
     def on_encoder_press(self, ring: int):
         """Center all particles on ring."""
