@@ -10,7 +10,8 @@ Physics-based LED animations for the monome Arc on a Raspberry Pi A+. Six indepe
 | Arduino Nano V3.0 | USB → `/dev/ttyUSB1` | I2C slave 0x31 (= 49 decimal) |
 | Teletype I2C bus | A4/A5/GND on Nano | `IIA 49` |
 
-4.7 kΩ pull-up resistors on SDA and SCL (to 3.3 V) are required.
+4.7 kΩ pull-up resistors on SDA and SCL (to 3.3 V) are required.  
+A bidirectional level shifter is used between the Arduino Nano V3.0 (5 V logic) and the Teletype I2C bus (3.3 V).
 
 ## Physics Modes
 
