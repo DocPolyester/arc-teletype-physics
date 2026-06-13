@@ -6,7 +6,7 @@ Six independent physics simulations drive the four rings of a monome Arc. Each r
 
 ## Hardware Note
 
-All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://github.com/theslowgrowth)**, which generates more encoder ticks per revolution than the original monome Arc. If you use an original Arc, interactions will feel more aggressive — reduce the sensitivity constants in the mode files accordingly:
+All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://github.com/theslowgrowth)**, which generates less encoder ticks per revolution than the original monome Arc. If you use an original Arc, interactions will feel more aggressive — change the sensitivity constants in the mode files accordingly:
 
 | Mode | File | Constant(s) to reduce |
 |------|------|-----------------------|
