@@ -32,7 +32,6 @@ deploy_files() {
         "${LOCAL_DIR}/src" \
         "${LOCAL_DIR}/scripts" \
         "${LOCAL_DIR}/docs" \
-        "${LOCAL_DIR}/kernel_modules" \
         "${LOCAL_DIR}/requirements.txt" \
         "${LOCAL_DIR}/config.yaml" \
         "${PI_USER}@${PI_HOST}:${REMOTE_DIR}/" 2>/dev/null || echo "Note: Some files might already exist"
