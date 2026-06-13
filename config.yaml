@@ -1,6 +1,6 @@
-# Arc Middleware - Configuration
+# Arc Cycles - Configuration
 
-# Startmodus (cycles | pendulum | gravity | spring | orbit | swing)
+# Start mode (cycles | pendulum | gravity | spring | orbit | swing)
 default_mode: cycles
 
 # Arc (via serialosc)
@@ -8,11 +8,11 @@ arc_host: "127.0.0.1"
 arc_port: 14951
 arc_prefix: "/monome"
 
-# Arduino Serial Bridge (Arduino Nano als I2C Slave für Teletype)
-# Hardware: Arduino Nano V3.0 via USB an RPi
-#   Arduino A4=SDA, A5=SCL → Teletype I2C Bus (4.7kΩ Pull-ups nötig!)
-#   USB: /dev/ttyUSB1  (ttyUSB0 = monome ARC)
-# I2C Adresse: 0x31 (49 dezimal → Teletype: IIA 49)
+# Arduino Serial Bridge (Arduino Nano V3.0 as I2C slave for Teletype)
+# Hardware: Arduino Nano V3.0 via USB to RPi
+#   Arduino A4=SDA, A5=SCL → Teletype I2C bus (4.7 kΩ pull-ups required, level shifter for 5V↔3.3V)
+#   USB: /dev/ttyUSB1  (ttyUSB0 = monome Arc)
+# I2C address: 0x31 (49 decimal → Teletype: IIA 49)
 arduino_serial:
   enabled: true
   port: "/dev/ttyUSB1"
