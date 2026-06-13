@@ -4,6 +4,19 @@ Six independent physics simulations drive the four rings of a monome Arc. Each r
 
 ---
 
+## Hardware Note
+
+All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://github.com/theslowgrowth)**, which generates more encoder ticks per revolution than the original monome Arc. If you use an original Arc, interactions will feel more aggressive — reduce the sensitivity constants in the mode files accordingly:
+
+| Mode | File | Constant(s) to reduce |
+|------|------|-----------------------|
+| Cycles | `cycles_mode.py` | `SENSITIVITY`, `MAX_SPEED` |
+| Pendulum | `pendulum_mode.py` | `encoder_force` multiplier (`delta * 2`) |
+| Gravity | `gravity_mode.py` | `encoder_impulse` multiplier (`delta * 3`) |
+| Spring | `spring_mode.py` | resonance increment (`abs(delta) * 0.5`) |
+| Orbit | `orbit_mode.py` | angular accel increment (`delta * 0.3`) |
+| Swing | `swing_mode.py` | `IMPULSE` |
+
 ## General Behavior
 
 - **ARC display**: 64 LEDs per ring (0 = left/horizontal, 32 = right, clockwise)

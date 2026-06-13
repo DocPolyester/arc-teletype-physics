@@ -13,6 +13,10 @@ Physics-based LED animations for the monome Arc on a Raspberry Pi A+. Six indepe
 4.7 kΩ pull-up resistors on SDA and SCL (to 3.3 V) are required.  
 A bidirectional level shifter is used between the Arduino Nano V3.0 (5 V logic) and the Teletype I2C bus (3.3 V).
 
+## Hardware Note
+
+The physics parameters (sensitivity, impulse strength, friction) are tuned for the **DIY Arc by [theslowgrowth](https://github.com/theslowgrowth)**, which produces more encoder ticks per revolution than the original monome Arc. If you use an original Arc, you may need to reduce sensitivity values — for example `SENSITIVITY` and `IMPULSE` constants in the mode files under `src/apps/arc_cycles/modes/`.
+
 ## Physics Modes
 
 | Nr | Name | Description |
