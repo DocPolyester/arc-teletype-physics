@@ -12,18 +12,13 @@ from pythonosc import udp_client, dispatcher, osc_server
 logger = logging.getLogger(__name__)
 
 SERIALOSC_PORT = 12002
+_ZEROS_256 = b"\x00" * 256
 
 
-def _build_ring_map_packet(prefix: str) -> bytes:
-    """
-    Pre-build the static OSC header for /prefix/ring/map.
-    The packet layout is:
-      [address (padded)] [type tag (padded)] [65 × int32 placeholder]
-    Only the 65 int32 data section is rebuilt per frame.
-    """
+def _build_ring_map_header(prefix: str) -> bytes:
+    """Pre-build the static OSC header for /prefix/ring/map (65 int32 args)."""
     addr = f"{prefix}/ring/map".encode() + b"\x00"
     addr += b"\x00" * ((4 - len(addr) % 4) % 4)
-    # type tag: ',' + 65 × 'i' (ring + 64 levels)
     tag = b"," + b"i" * 65 + b"\x00"
     tag += b"\x00" * ((4 - len(tag) % 4) % 4)
     return addr + tag
@@ -98,10 +93,19 @@ class ArcController:
 
         self.client = udp_client.SimpleUDPClient(host, self.port)
 
-        # Fast raw UDP sender for ring/map (bypasses python-osc serialization overhead)
+        # Fast raw UDP sender for ring/map
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._dest = (host, self.port)
-        self._ring_map_header = _build_ring_map_packet(prefix)
+
+        # Pre-allocate one packet buffer per ring (header baked in, ring index fixed)
+        header = _build_ring_map_header(prefix)
+        self._hlen = len(header)
+        self._ring_bufs: List[bytearray] = []
+        for ring in range(4):
+            buf = bytearray(self._hlen + 4 + 256)  # header + ring_int + 64×int32
+            buf[:self._hlen] = header
+            struct.pack_into(">i", buf, self._hlen, ring)
+            self._ring_bufs.append(buf)
 
         self._server: Optional[osc_server.BlockingOSCUDPServer] = None
         self._server_thread: Optional[threading.Thread] = None
@@ -115,10 +119,13 @@ class ArcController:
     def set_ring_all(self, ring: int, brightness: int):
         self.client.send_message(f"{self.prefix}/ring/all", [ring, brightness])
 
-    def set_ring_map(self, ring: int, levels: List[int]):
-        """Set all 64 LEDs on a ring atomically — fast raw UDP path."""
-        packet = self._ring_map_header + struct.pack(">65i", ring, *levels)
-        self._sock.sendto(packet, self._dest)
+    def set_ring_map(self, ring: int, levels):
+        """Set all 64 LEDs on a ring atomically — fast raw UDP, no temp allocations."""
+        buf = self._ring_bufs[ring]
+        offset = self._hlen + 4
+        buf[offset:offset + 256] = _ZEROS_256        # zero all level bytes (C-level memcpy)
+        buf[offset + 3::4] = bytes(levels)           # set LSB of each int32 (0-15 fits in 1 byte)
+        self._sock.sendto(buf, self._dest)
 
     def clear_ring(self, ring: int):
         self.set_ring_all(ring, 0)

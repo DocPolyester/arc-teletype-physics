@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class CyclesMode(ArcMode):
 
     FRICTION    = 0.985  # decay per frame
-    SENSITIVITY = 0.1    # positions-per-frame per encoder-tick
+    SENSITIVITY = 0.3    # positions-per-frame per encoder-tick
     MAX_SPEED   = 2.0    # hard cap so the ring never spins uncontrollably
 
     def __init__(self, arc, num_rings: int = 4):

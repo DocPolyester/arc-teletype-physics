@@ -24,6 +24,7 @@ class ArcMode(ABC):
         self.name = name
         self.is_active = False
         self.arc_offset = 0   # LED-Rotation: 0=quer (default), 48=hochkant (270°)
+        self._level_bufs = [bytearray(64) for _ in range(4)]
         logger.info(f"Mode '{name}' initialized")
     
     @abstractmethod
@@ -58,10 +59,11 @@ class ArcMode(ABC):
         num_rings = getattr(self, "num_rings", 4)
         offset = self.arc_offset
         for ring in range(num_rings):
-            levels = [0] * 64
+            buf = self._level_bufs[ring]
+            buf[:] = b"\x00" * 64
             for pos, brightness in self.get_ring_display(ring):
-                levels[(pos + offset) % 64] = max(0, min(15, brightness))
-            self.arc.set_ring_map(ring, levels)
+                buf[(pos + offset) % 64] = max(0, min(15, brightness))
+            self.arc.set_ring_map(ring, buf)
 
     def clear_display(self):
         num_rings = getattr(self, "num_rings", 4)

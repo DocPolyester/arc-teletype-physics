@@ -187,11 +187,19 @@ class ArcCyclesApp:
         """Start the app main loop."""
         self.running = True
         logger.info("Arc Cycles App started")
-        
+
+        _target = 1.0 / 60.0
+
         try:
             while self.running:
-                self.update()
-                time.sleep(0.016)  # ~60 FPS
+                t0 = time.perf_counter()
+                try:
+                    self.update()
+                except Exception as e:
+                    logger.error(f"Frame error: {e}", exc_info=True)
+                remaining = _target - (time.perf_counter() - t0)
+                if remaining > 0.001:
+                    time.sleep(remaining)
         
         except KeyboardInterrupt:
             logger.info("Interrupted")

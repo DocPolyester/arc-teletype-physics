@@ -39,10 +39,7 @@ class Particle:
     
     def wrap_position(self):
         """Wrap position to 0-63 range."""
-        while self.position < 0:
-            self.position += 64
-        while self.position >= 64:
-            self.position -= 64
+        self.position = self.position % 64
 
 
 class PhysicsEngine:
