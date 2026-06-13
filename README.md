@@ -1,6 +1,6 @@
 # Arc Cycles
 
-Physics-based LED animations for the monome Arc on a Raspberry Pi A+. Six independent physics models (Cycles, Pendulum, Gravity, Spring, Orbit, Swing) drive the four rings. A Monome Teletype can read state values and control the active mode via an Arduino Nano V3.0 acting as an I2C bridge.
+Physics-based LED animations for the monome Arc on a Raspberry Pi A+. Six independent physics models (Cycles, Pendulum, Gravity, Spring, Orbit, Swing) can be assigned per ring — each of the four rings runs its own mode independently. A Monome Teletype can read state values and switch modes at runtime via an Arduino Nano V3.0 acting as an I2C bridge.
 
 ## Hardware
 
@@ -34,19 +34,29 @@ Details: [docs/PHYSICS_MODES.md](docs/PHYSICS_MODES.md)
 
 ```
 IIA 49       ; set I2C address (once)
-IIS 1        ; mode: Cycles
-IIS 6        ; mode: Swing
-IIS 91       ; portrait orientation (270°)
-IIS 90       ; horizontal orientation (default)
+
+; Switch all rings to the same mode
+IIS 1        ; Cycles  IIS 2 Pendulum  IIS 3 Gravity
+IIS 4        ; Spring  IIS 5 Orbit     IIS 6 Swing
+
+; Switch a single ring — tens digit = ring (1–4), units = mode (1–6)
+IIS 11       ; Ring 1 → Cycles      IIS 16  Ring 1 → Swing
+IIS 26       ; Ring 2 → Swing       IIS 32  Ring 3 → Pendulum
+IIS 43       ; Ring 4 → Gravity     (IIS 21–46 cover all combinations)
+
+; Orientation
+IIS 91       ; portrait (270°)      IIS 90  horizontal (default)
 IIS 99       ; shut down Pi
 
+; Read physics state per ring
 IIQ 10       ; Ring 1 position  (0–5000)
 IIQ 11       ; Ring 1 velocity  (±5000)
-IIQ 12       ; Ring 1 angle     (±5000)
-IIQ 13       ; Ring 1 param1    (0–5000)
+IIQ 12       ; Ring 1 angle     (±5000, Swing/Pendulum only)
+IIQ 13       ; Ring 1 param1    (mode-specific)
 ; Rings 2–4: IIQ 2x / 3x / 4x
 ```
 
+Each ring reports the state of whatever mode is currently running on it.  
 Full reference: [docs/TELETYPE_REFERENCE.md](docs/TELETYPE_REFERENCE.md)
 
 ## Encoder Shortcuts
@@ -55,7 +65,7 @@ Full reference: [docs/TELETYPE_REFERENCE.md](docs/TELETYPE_REFERENCE.md)
 |--------|--------|
 | Turn encoder | Interact with physics (mode-dependent) |
 | Press encoder | Reset that ring to initial state |
-| Press encoder 0 + 1 (within 2 s) | Shut down Pi |
+| Hold encoder 0 for > 2 s | Shut down Pi |
 
 ## Project Structure
 

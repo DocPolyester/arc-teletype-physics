@@ -57,9 +57,21 @@ Command format: **tens digit = ring (1–4), units digit = mode (1–6)**
 | `IIS 16` | Ring 1 | Swing |
 | `IIS 21` | Ring 2 | Cycles |
 | `IIS 22` | Ring 2 | Pendulum |
-| … | … | … |
+| `IIS 23` | Ring 2 | Gravity |
+| `IIS 24` | Ring 2 | Spring |
+| `IIS 25` | Ring 2 | Orbit |
+| `IIS 26` | Ring 2 | Swing |
+| `IIS 31` | Ring 3 | Cycles |
+| `IIS 32` | Ring 3 | Pendulum |
+| `IIS 33` | Ring 3 | Gravity |
+| `IIS 34` | Ring 3 | Spring |
+| `IIS 35` | Ring 3 | Orbit |
+| `IIS 36` | Ring 3 | Swing |
 | `IIS 41` | Ring 4 | Cycles |
-| … | … | … |
+| `IIS 42` | Ring 4 | Pendulum |
+| `IIS 43` | Ring 4 | Gravity |
+| `IIS 44` | Ring 4 | Spring |
+| `IIS 45` | Ring 4 | Orbit |
 | `IIS 46` | Ring 4 | Swing |
 
 ### Arc Orientation

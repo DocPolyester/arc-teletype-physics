@@ -1,6 +1,6 @@
 # Arc Cycles — Physics Modes
 
-Six independent physics simulations drive the four rings of a monome Arc. Each ring behaves independently. Encoders interact with the simulation in real time.
+Six physics simulations are available for the four rings of a monome Arc. Each ring runs its own independent mode — all four rings can run different modes simultaneously. Encoders interact with the simulation in real time.
 
 ---
 
@@ -22,8 +22,9 @@ All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://gi
 - **ARC display**: 64 LEDs per ring (0 = left/horizontal, 32 = right, clockwise)
 - **Orientation**: default horizontal; switchable to portrait (270°) with `IIS 91`
 - **Update rate**: ~60 Hz physics loop
+- **Per-ring modes**: each ring runs its own mode instance — assign with `IIS 11–46` (Teletype) or `ring_modes` list in `config.yaml`
 - **Encoder press** (single ring): resets that ring's state
-- **Encoder 0 + 1 pressed** (within 2 s): shuts down the Raspberry Pi
+- **Hold encoder 0 for > 2 s**: shuts down the Raspberry Pi
 
 ---
 
@@ -32,7 +33,7 @@ All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://gi
 Classic rotating dot with inertia and friction — similar to the Ansible Cycles algorithm.
 
 **Physics:**  
-Each ring has a speed value. Each frame the speed is multiplied by friction factor 0.985, so the ring gradually decelerates. One encoder tick adds ±0.05 to the speed (capped at ±2.0). The bright dot advances by the current speed each frame.
+Each ring has a speed value. Each frame the speed is multiplied by friction factor 0.985, so the ring gradually decelerates. One encoder tick adds ±0.3 to the speed (capped at ±2.0). The bright dot advances by the current speed each frame.
 
 **Display:**  
 One bright head pixel (brightness 15) + one dim trailing pixel (brightness 3).
@@ -54,10 +55,10 @@ One bright head pixel (brightness 15) + one dim trailing pixel (brightness 3).
 
 ## Mode 2 — Pendulum
 
-Four harmonic pendulums (linear approximation) with different periods and staggered phases.
+Harmonic pendulum (linear approximation). Each ring that runs this mode gets its own independent oscillation.
 
 **Physics:**  
-Each ring oscillates sinusoidally around position 32 with a configured period (default: 1.0 / 1.5 / 2.0 / 2.5 s) and an amplitude of ±16 LED positions. Phases are offset by π/2 so the four rings swing asynchronously. One encoder tick adds a brief disturbance force (decays over 10 frames).
+The ring oscillates sinusoidally around position 32. Period and starting phase are selected based on the ring's position (default periods: 1.0 / 1.5 / 2.0 / 2.5 s), giving visual variety when multiple rings share this mode. Amplitude: ±16 LED positions. One encoder tick adds a brief disturbance force (decays over 10 frames).
 
 **Display:**  
 Bright spot (brightness 14) + short trail (6 → 4 → 2).
@@ -107,7 +108,7 @@ Each particle appears as a main dot plus 2 symmetric glow pixels on each side.
 Spring mechanics with resonance effects. Four particles per ring are pulled toward the center (position 32) by a spring. Encoder turns excite the system into resonance.
 
 **Physics:**  
-Spring force = `k × (center − position)` along the shortest path on the ring (±32 LEDs). A resonance energy overlays a sinusoidal perturbation and decays at 0.95 per frame. Particle velocity is scaled by damping factor 0.92. Spring constant k differs per ring (default: 2.0 / 2.2 / 1.8 / 2.0).
+Spring force = `k × (center − position)` along the shortest path on the ring (±32 LEDs). A resonance energy overlays a sinusoidal perturbation and decays at 0.95 per frame. Particle velocity is scaled by damping factor 0.92. Spring constant k is chosen per ring (available: 2.0 / 2.2 / 1.8 / 2.0).
 
 **Display:**  
 Dim center marker (brightness 3) + particles whose brightness increases with resonance energy.
@@ -132,7 +133,7 @@ Dim center marker (brightness 3) + particles whose brightness increases with res
 Orbital mechanics model: multiple bodies orbit a center point on the ring. Encoder turns accelerate the orbit (like a gravity-assist maneuver).
 
 **Physics:**  
-Each ring has 3 or 4 evenly spaced bodies (default: rings 0+1 = 3 particles, rings 2+3 = 4 particles). Angular position = `ω × t + phase_offset`. Encoder input adds angular acceleration (decays at 0.98 per frame). Brightness varies with `cos(angle)` to create a 3D impression.
+Each ring instance has 3 or 4 evenly spaced bodies (chosen by ring position: rings 0+1 = 3, rings 2+3 = 4 particles). Orbital radius also varies per ring (12–24 LEDs). Angular position = `ω × t + phase_offset`. Encoder input adds angular acceleration (decays at 0.98 per frame). Brightness varies with `cos(angle)` to create a 3D impression.
 
 **Display:**  
 Dim center point (brightness 2) + orbiting bodies with varying brightness (1–15).
@@ -159,8 +160,7 @@ Nonlinear pendulum with Runge-Kutta 4 integration. The exact pendulum ODE (no sm
 **Physics:**  
 ODE: `θ'' = −(g/L)·sin(θ) − b·θ'`  
 with g = 9.8 m/s² and adjustable damping b (default: 0.4).  
-Pendulum lengths for the four rings: 0.25 m / 1.0 m / 2.25 m / 4.0 m.  
-Natural periods: ~1 s / 2 s / 3 s / 4 s.  
+Pendulum length is chosen per ring based on its position (available lengths: 0.25 / 1.0 / 2.25 / 4.0 m → natural periods ~1 / 2 / 3 / 4 s), giving different dynamics when multiple rings share this mode.  
 Angle θ maps to LED position: π/2 → ±20 LEDs from equilibrium (position 32).
 
 **Display:**  
@@ -183,11 +183,11 @@ Bright main dot (brightness 6–15, proportional to current speed — brightest 
 
 ## Mode Overview
 
-| Nr | Teletype | Name | Description |
-|----|----------|------|-------------|
-| 1 | `IIS 1` | Cycles | Rotating dot with inertia and friction |
-| 2 | `IIS 2` | Pendulum | Harmonic pendulum, 4 different periods |
-| 3 | `IIS 3` | Gravity | Particles under gravity with bouncing |
-| 4 | `IIS 4` | Spring | Spring mechanics with resonance |
-| 5 | `IIS 5` | Orbit | Orbital model / planetary system |
-| 6 | `IIS 6` | Swing | Nonlinear pendulum (RK4) |
+| Nr | All rings | Single ring | Name | Description |
+|----|-----------|-------------|------|-------------|
+| 1 | `IIS 1` | `IIS 11/21/31/41` | Cycles | Rotating dot with inertia and friction |
+| 2 | `IIS 2` | `IIS 12/22/32/42` | Pendulum | Harmonic pendulum |
+| 3 | `IIS 3` | `IIS 13/23/33/43` | Gravity | Particles under gravity with bouncing |
+| 4 | `IIS 4` | `IIS 14/24/34/44` | Spring | Spring mechanics with resonance |
+| 5 | `IIS 5` | `IIS 15/25/35/45` | Orbit | Orbital model / planetary system |
+| 6 | `IIS 6` | `IIS 16/26/36/46` | Swing | Nonlinear pendulum (RK4) |
