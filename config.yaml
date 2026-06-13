@@ -1,7 +1,16 @@
 # Arc Cycles - Configuration
 
-# Start mode (cycles | pendulum | gravity | spring | orbit | swing)
+# Default mode for all rings (cycles | pendulum | gravity | spring | orbit | swing)
 default_mode: cycles
+
+# Optional: assign a different mode to each ring individually.
+# Overrides default_mode. List of 4 mode names (ring 0 → ring 3).
+# Example: all 4 rings in different modes
+# ring_modes:
+#   - cycles
+#   - swing
+#   - pendulum
+#   - gravity
 
 # Arc (via serialosc)
 arc_host: "127.0.0.1"

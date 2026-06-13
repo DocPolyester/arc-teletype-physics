@@ -56,20 +56,26 @@ def main():
         i2c_slave = ArduinoSerialHandler(port=port, address=address)
         logger.info(f"Arduino Serial Bridge: {port}  I2C-Adresse=0x{address:02x}")
 
-    app = ArcCyclesApp(arc=arc, num_rings=num_rings, i2c_slave=i2c_slave)
-
     default_mode = config.get("default_mode", "cycles")
-    app.set_mode(default_mode)
+    ring_modes   = config.get("ring_modes", None)
 
-    # Wire encoder events from serialosc into the app
+    app = ArcCyclesApp(
+        arc=arc,
+        num_rings=num_rings,
+        i2c_slave=i2c_slave,
+        default_mode=default_mode,
+        ring_modes=ring_modes,
+    )
+
     arc.start_receiver(
         listen_port=OSC_LISTEN_PORT,
         encoder_callback=app.on_encoder_turn,
         press_callback=app.on_encoder_press,
+        release_callback=app.on_encoder_release,
     )
 
     logger.info(f"Listening for encoder events on port {OSC_LISTEN_PORT}")
-    logger.info(f"Active mode: {app.current_mode_name}")
+    logger.info(f"Ring modes: {app.ring_mode_names}")
 
     app.start()
 

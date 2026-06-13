@@ -65,6 +65,15 @@ class ArcMode(ABC):
                 buf[(pos + offset) % 64] = max(0, min(15, brightness))
             self.arc.set_ring_map(ring, buf)
 
+    def display_for_ring(self, physical_ring: int):
+        """Render this mode's internal ring 0 to a specific physical ring."""
+        buf = self._level_bufs[0]
+        buf[:] = b"\x00" * 64
+        offset = self.arc_offset
+        for pos, brightness in self.get_ring_display(0):
+            buf[(pos + offset) % 64] = max(0, min(15, brightness))
+        self.arc.set_ring_map(physical_ring, buf)
+
     def clear_display(self):
         num_rings = getattr(self, "num_rings", 4)
         for ring in range(num_rings):

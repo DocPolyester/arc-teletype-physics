@@ -31,7 +31,7 @@ All subsequent `IIS` and `IIQ` commands target this address.
 
 Teletype writes **1 byte** to the Arduino. No `value` parameter needed — the command code itself is the value.
 
-### Switch Mode
+### Switch Mode — All Rings
 
 | Command | Mode |
 |---------|------|
@@ -41,6 +41,26 @@ Teletype writes **1 byte** to the Arduino. No `value` parameter needed — the c
 | `IIS 4` | Spring — spring mechanics / resonance |
 | `IIS 5` | Orbit — orbital model |
 | `IIS 6` | Swing — nonlinear pendulum (RK4) |
+
+### Switch Mode — Single Ring
+
+Each ring can run a different mode independently.  
+Command format: **tens digit = ring (1–4), units digit = mode (1–6)**
+
+| Command | Ring | Mode |
+|---------|------|------|
+| `IIS 11` | Ring 1 | Cycles |
+| `IIS 12` | Ring 1 | Pendulum |
+| `IIS 13` | Ring 1 | Gravity |
+| `IIS 14` | Ring 1 | Spring |
+| `IIS 15` | Ring 1 | Orbit |
+| `IIS 16` | Ring 1 | Swing |
+| `IIS 21` | Ring 2 | Cycles |
+| `IIS 22` | Ring 2 | Pendulum |
+| … | … | … |
+| `IIS 41` | Ring 4 | Cycles |
+| … | … | … |
+| `IIS 46` | Ring 4 | Swing |
 
 ### Arc Orientation
 
@@ -60,6 +80,8 @@ Teletype writes **1 byte** to the Arduino. No `value` parameter needed — the c
 ## IIQ — Read Commands (Query)
 
 Teletype writes a register code and reads back 2 bytes (int16, big-endian). Return range: **0–5000** (unsigned) or **−5000–+5000** (signed, depending on state).
+
+Each ring reports the state of whatever mode is currently running on it.
 
 ### Register Scheme
 
@@ -102,8 +124,14 @@ Register = Ring × 10 + State
 ; Set address once
 IIA 49
 
-; Switch to Swing mode
+; All rings → Swing mode
 IIS 6
+
+; Ring 1 → Cycles, Ring 2 → Swing, Ring 3 → Pendulum, Ring 4 → Gravity
+IIS 11
+IIS 26
+IIS 32
+IIS 43
 
 ; Read position of Ring 1 (state 0)
 IIQ 10   ; returns 0–5000
@@ -116,6 +144,9 @@ IIQ 22   ; returns −5000…+5000  (−π/2…+π/2 → −5000…+5000)
 
 ; Read oscillation period of Ring 4 (state 3, Pendulum mode)
 IIQ 43   ; e.g. 2500 = 2.5 seconds
+
+; Switch Ring 2 to Orbit mid-scene
+IIS 25
 
 ; Switch to portrait orientation
 IIS 91
@@ -131,15 +162,19 @@ IIS 99
 ```
 ; INIT
 IIA 49
-IIS 6
+; Ring 1 Cycles, Ring 2 Swing, Ring 3 Swing (different length), Ring 4 Orbit
+IIS 11
+IIS 26
+IIS 36
+IIS 45
 
 ; METRO (e.g. every 250 ms)
-X IIQ 10       ; position of Ring 1
-Y IIQ 11       ; velocity of Ring 1
+X IIQ 10       ; position of Ring 1 (Cycles)
+Y IIQ 21       ; velocity of Ring 2 (Swing)
 
-; If angle > 4000: switch back to Spring
-Z IIQ 12
-IF GT Z 4000: IIS 4
+; If Swing angle > 4000: switch Ring 2 to Spring
+Z IIQ 22
+IF GT Z 4000: IIS 24
 ```
 
 ---
@@ -148,4 +183,6 @@ IF GT Z 4000: IIS 4
 
 - The Arduino resets when the serial connection is opened (~2 s boot time). Queries during the first seconds after Pi startup may return 0.
 - All values scale to **0–5000** (unsigned) or **±5000** (signed) for direct use as Teletype variables.
-- Pressing Encoder 0 + Encoder 1 simultaneously (within 2 s) also shuts down the Pi — without Teletype.
+- IIQ always returns the state of whatever mode is active on that ring, even if rings are in different modes.
+- Holding Encoder 0 (Ring 1 encoder) for more than 2 seconds shuts down the Pi — without Teletype.
+- Per-ring mode can also be set in `config.yaml` under `ring_modes` for persistent startup configuration.

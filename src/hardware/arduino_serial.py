@@ -16,9 +16,16 @@ Serial-Protokoll RPi→Arduino (34 Bytes):
 Serial-Protokoll Arduino→RPi (N+3 Bytes):
   [0xBB][N][data0..dataN-1][xor_chk]
 
-IIS-Befehle (Teletype schreibt an Arduino, kein Read):
-  IIS 49 1..6  → Moduswechsel (1=cycles 2=pendulum 3=gravity 4=spring 5=orbit 6=swing)
-  IIS 49 99    → RPi herunterfahren
+IIS-Befehle (alle Ringe):
+  IIS 49 1..6   → Moduswechsel alle Ringe (1=cycles 2=pendulum 3=gravity 4=spring 5=orbit 6=swing)
+  IIS 49 90/91  → ARC-Ausrichtung (0°/270°)
+  IIS 49 99     → RPi herunterfahren
+
+IIS-Befehle (einzelner Ring):
+  IIS 49 11..16 → Ring 0 Modus 1..6
+  IIS 49 21..26 → Ring 1 Modus 1..6
+  IIS 49 31..36 → Ring 2 Modus 1..6
+  IIS 49 41..46 → Ring 3 Modus 1..6
 
 IIQ-Abfragen (Teletype schreibt Register, liest 2 Bytes int16):
   IIQ 49 10..19 → Ring 0, Zustand 0..9
@@ -177,7 +184,6 @@ class ArduinoSerialHandler:
                         state = "TEXT"
 
                 elif state == "TEXT":
-                    # Startup-String lesen bis Newline
                     if b == 0x0A:
                         state = "IDLE"
 
@@ -227,11 +233,18 @@ class ArduinoSerialHandler:
             i += 2
 
     def _dispatch_ring_select(self, cmd: int):
-        # Einzel-Byte IIS (falls Teletype 1 Byte sendet)
+        # Einzel-Byte IIS
         if 1 <= cmd <= 6:
             if self._app:
                 self._app.set_mode(MODE_NAMES[cmd - 1])
                 logger.info(f"IIS Mode → {MODE_NAMES[cmd - 1]}")
+        elif 11 <= cmd <= 46:
+            # Per-ring mode: tens digit = ring+1, units digit = mode 1-6
+            ring     = cmd // 10 - 1
+            mode_idx = cmd % 10
+            if 1 <= mode_idx <= 6 and self._app:
+                self._app.set_ring_mode(ring, MODE_NAMES[mode_idx - 1])
+                logger.info(f"IIS Ring {ring} → {MODE_NAMES[mode_idx - 1]}")
         elif cmd == 90 and self._app:
             self._app.set_arc_orientation(0)
         elif cmd == 91 and self._app:
@@ -256,10 +269,16 @@ class ArduinoSerialHandler:
             if 1 <= lo <= 6 and app:
                 app.set_mode(MODE_NAMES[lo - 1])
                 logger.info(f"IIS Mode → {MODE_NAMES[lo - 1]}")
+            elif 11 <= lo <= 46 and app:
+                ring     = lo // 10 - 1
+                mode_idx = lo % 10
+                if 1 <= mode_idx <= 6:
+                    app.set_ring_mode(ring, MODE_NAMES[mode_idx - 1])
+                    logger.info(f"IIS Ring {ring} → {MODE_NAMES[mode_idx - 1]}")
             elif lo == 90 and app:
                 app.set_arc_orientation(0)
             elif lo == 91 and app:
-                app.set_arc_orientation(48)   # 270° = 48/64 LEDs
+                app.set_arc_orientation(48)
             elif lo == 99:
                 logger.info("IIS: RPi Shutdown angefordert")
                 subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
@@ -281,48 +300,62 @@ class ArduinoSerialHandler:
         elif cmd == 0x22 and app:
             ring = (lo >> 4) & 0x3
             amp  = (lo & 0x0F) * 2
-            app.on_teletype_command(f"PEND.AMP {ring} {amp}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "pendulum":
+                app.ring_instances[ring].teletype_command(f"AMP 0 {amp}")
 
         elif cmd == 0x23 and app:
             ring   = (lo >> 4) & 0x3
             center = lo & 0x3F
-            mode   = app.modes.get("pendulum")
-            if mode and 0 <= ring < 4:
-                mode.centers[ring] = center
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "pendulum":
+                app.ring_instances[ring].centers[0] = center
 
         elif cmd == 0x24 and app:
-            app.on_teletype_command("PEND.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "pendulum":
+                    app.ring_instances[r].teletype_command("RESET")
 
         elif cmd == 0x30 and app:
-            app.on_teletype_command(f"GRAV.STRENGTH {lo / 10.0:.1f}")
+            strength = lo / 10.0
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "gravity":
+                    app.ring_instances[r].gravity_strength = max(0, min(10, strength))
 
         elif cmd == 0x31 and app:
-            app.on_teletype_command("GRAV.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "gravity":
+                    app.ring_instances[r].teletype_command("RESET")
 
         elif cmd == 0x40 and app:
             ring = (lo >> 4) & 0x3
             k    = (lo & 0x0F) / 2.0
-            app.on_teletype_command(f"SPRING.K {ring} {k:.1f}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "spring":
+                app.ring_instances[ring].teletype_command(f"K 0 {k:.1f}")
 
         elif cmd == 0x41 and app:
             ring   = (lo >> 6) & 0x3
             center = lo & 0x3F
-            app.on_teletype_command(f"SPRING.CENTER {ring} {center}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "spring":
+                app.ring_instances[ring].teletype_command(f"CENTER 0 {center}")
 
         elif cmd == 0x42 and app:
-            app.on_teletype_command("SPRING.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "spring":
+                    app.ring_instances[r].teletype_command("RESET")
 
         elif cmd == 0x50 and app:
             ring = (lo >> 6) & 0x3
             pos  = lo & 0x3F
-            app.on_teletype_command(f"CYCLES.POS {ring} {pos}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "cycles":
+                app.ring_instances[ring].teletype_command(f"POS 0 {pos}")
 
         elif cmd == 0x51:
             self._pending_cmd = 0x51
             self._pending_hi  = lo
 
         elif cmd == 0x53 and app:
-            app.on_teletype_command("CYCLES.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "cycles":
+                    app.ring_instances[r].teletype_command("RESET")
 
         elif cmd == 0x60:
             self._pending_cmd = 0x60
@@ -331,25 +364,34 @@ class ArduinoSerialHandler:
         elif cmd == 0x62 and app:
             ring   = (lo >> 6) & 0x3
             radius = lo & 0x1F
-            app.on_teletype_command(f"ORBIT.RADIUS {ring} {radius}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "orbit":
+                app.ring_instances[ring].teletype_command(f"RADIUS 0 {radius}")
 
         elif cmd == 0x63 and app:
             ring  = (lo >> 4) & 0x3
             count = max(1, min(8, lo & 0x0F))
-            app.on_teletype_command(f"ORBIT.PARTICLES {ring} {count}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "orbit":
+                app.ring_instances[ring].teletype_command(f"PARTICLES 0 {count}")
 
         elif cmd == 0x64 and app:
-            app.on_teletype_command("ORBIT.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "orbit":
+                    app.ring_instances[r].teletype_command("RESET")
 
         elif cmd == 0x70:
             self._pending_cmd = 0x70
             self._pending_hi  = lo
 
         elif cmd == 0x72 and app:
-            app.on_teletype_command(f"SWING.DAMP {lo / 50.0:.2f}")
+            damp = lo / 50.0
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "swing":
+                    app.ring_instances[r].damping = max(0.0, damp)
 
         elif cmd == 0x73 and app:
-            app.on_teletype_command("SWING.RESET")
+            for r, name in enumerate(app.ring_mode_names):
+                if name == "swing":
+                    app.ring_instances[r].teletype_command("RESET")
 
         else:
             logger.debug(f"Unbekannter Befehl hi=0x{hi:02x} lo=0x{lo:02x}")
@@ -366,25 +408,29 @@ class ArduinoSerialHandler:
         if cmd == 0x20:
             period_ms = ((first_lo & 0xFF) << 8) | lo
             ring      = (first_lo >> 4) & 0x3
-            app.on_teletype_command(f"PEND.PERIOD {ring} {period_ms}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "pendulum":
+                app.ring_instances[ring].teletype_command(f"PERIOD 0 {period_ms}")
 
         elif cmd == 0x51:
             ring  = (first_lo >> 4) & 0x3
             speed = struct.unpack(">h", bytes([first_lo & 0x0F, lo]))[0]
-            app.on_teletype_command(f"CYCLES.SPEED {ring} {speed}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "cycles":
+                app.ring_instances[ring].teletype_command(f"SPEED 0 {speed}")
 
         elif cmd == 0x60:
             ring      = (first_lo >> 4) & 0x3
             period_ms = ((first_lo & 0x0F) << 8) | lo
-            app.on_teletype_command(f"ORBIT.PERIOD {ring} {period_ms}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "orbit":
+                app.ring_instances[ring].teletype_command(f"PERIOD 0 {period_ms}")
 
         elif cmd == 0x70:
             ring    = (first_lo >> 4) & 0x3
             impulse = struct.unpack(">h", bytes([first_lo & 0x0F, lo]))[0] / 100.0
-            app.on_teletype_command(f"SWING.KICK {ring} {impulse:.2f}")
+            if 0 <= ring < app.num_rings and app.ring_mode_names[ring] == "swing":
+                app.ring_instances[ring].teletype_command(f"KICK 0 {impulse:.2f}")
 
     # ------------------------------------------------------------------ #
-    #  Physik-Werte auslesen                                               #
+    #  Physics value readout (per-ring instance, always internal index 0) #
     # ------------------------------------------------------------------ #
 
     def _get_value(self, app, ring: int, vtype: int) -> int:
@@ -396,52 +442,48 @@ class ArduinoSerialHandler:
 
     def _get_position(self, app, ring: int) -> int:
         """Arc-Position (0–63) skaliert auf 0–5000."""
-        mode = app.current_mode
-        name = app.current_mode_name
         try:
+            inst = app.ring_instances[ring]
+            name = app.ring_mode_names[ring]
             if name == "cycles":
-                raw = int(mode.positions[ring]) % 64
+                raw = int(inst.positions[0]) % 64
             elif name == "swing":
-                raw = int(round(mode.CENTER + mode.theta[ring] * mode.SCALE)) % 64
+                raw = int(round(inst.CENTER + inst.theta[0] * inst.SCALE)) % 64
             elif name == "orbit":
-                raw = int(mode.centers[ring]) % 64
+                raw = int(inst.centers[0]) % 64
             else:
-                raw = int(mode.physics.rings[ring][0].position) % 64
+                raw = int(inst.physics.rings[0][0].position) % 64
             return raw * 5000 // 63
         except Exception:
             return 0
 
     def _get_velocity(self, app, ring: int) -> int:
         """Geschwindigkeit skaliert auf ±5000."""
-        mode = app.current_mode
-        name = app.current_mode_name
         try:
+            inst = app.ring_instances[ring]
+            name = app.ring_mode_names[ring]
             if name == "cycles":
-                # speeds ±2.0 pos/frame → ±5000
-                return int(mode.speeds[ring] * 2500)
+                return int(inst.speeds[0] * 2500)
             if name == "swing":
-                # omega ±π rad/s typisch → ±5000
-                return int(mode.omega[ring] * 1592)
+                return int(inst.omega[0] * 1592)
             if name == "orbit":
-                return int(mode.angular_velocities[ring] * 1592)
-            # Partikel-velocity ±2 pos/frame typisch → ±5000
-            return int(mode.physics.rings[ring][0].velocity * 2500)
+                return int(inst.angular_velocities[0] * 1592)
+            return int(inst.physics.rings[0][0].velocity * 2500)
         except Exception:
             return 0
 
     def _get_angle(self, app, ring: int) -> int:
         """Winkel skaliert auf ±5000 (±π/2 = ±5000)."""
-        mode = app.current_mode
-        name = app.current_mode_name
         HALF_PI = math.pi / 2
         try:
+            inst = app.ring_instances[ring]
+            name = app.ring_mode_names[ring]
             if name == "swing":
-                # theta ±π/2 → ±5000
-                return int(mode.theta[ring] * 5000 / HALF_PI)
+                return int(inst.theta[0] * 5000 / HALF_PI)
             if name == "pendulum":
-                pos    = mode.physics.rings[ring][0].position
-                center = mode.centers[ring]
-                amp    = max(1, mode.amplitudes[ring])
+                pos    = inst.physics.rings[0][0].position
+                center = inst.centers[0]
+                amp    = max(1, inst.amplitudes[0])
                 ratio  = max(-1.0, min(1.0, (pos - center) / amp))
                 return int(math.asin(ratio) * 5000 / HALF_PI)
         except Exception:
@@ -450,23 +492,19 @@ class ArduinoSerialHandler:
 
     def _get_param1(self, app, ring: int) -> int:
         """Modusspezifischer Parameter skaliert auf 0–5000."""
-        mode = app.current_mode
-        name = app.current_mode_name
         try:
+            inst = app.ring_instances[ring]
+            name = app.ring_mode_names[ring]
             if name == "pendulum":
-                # periods in Sekunden (0.5–5s) → ms (500–5000)
-                return int(mode.periods[ring] * 1000)
+                return int(inst.periods[0] * 1000)
             if name == "gravity":
-                # gravity_strength 0–10 → 0–5000
-                return int(mode.gravity_strength * 500)
+                return int(inst.gravity_strength * 500)
             if name == "spring":
-                # spring_constant 0.1–5.0 → 100–5000
-                return int(mode.spring_constant[ring] * 1000)
+                return int(inst.spring_constant[0] * 1000)
             if name == "orbit":
-                return int(mode.periods[ring] * 1000)
+                return int(inst.periods[0] * 1000)
             if name == "swing":
-                # damping 0–2.0 → 0–5000
-                return int(mode.damping * 2500)
+                return int(inst.damping * 2500)
         except Exception:
             return 0
         return 0

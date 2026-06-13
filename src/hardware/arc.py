@@ -109,8 +109,9 @@ class ArcController:
 
         self._server: Optional[osc_server.BlockingOSCUDPServer] = None
         self._server_thread: Optional[threading.Thread] = None
-        self.encoder_callback: Optional[Callable[[int, int], None]] = None
-        self.press_callback:   Optional[Callable[[int], None]]      = None
+        self.encoder_callback:  Optional[Callable[[int, int], None]] = None
+        self.press_callback:    Optional[Callable[[int], None]]      = None
+        self.release_callback:  Optional[Callable[[int], None]]      = None
         logger.info(f"ArcController initialized for {host}:{self.port} prefix={prefix}")
 
     def set_ring_led(self, ring: int, position: int, brightness: int):
@@ -132,14 +133,16 @@ class ArcController:
 
     def start_receiver(self, listen_port: int,
                        encoder_callback: Callable[[int, int], None],
-                       press_callback: Optional[Callable[[int], None]] = None):
+                       press_callback: Optional[Callable[[int], None]] = None,
+                       release_callback: Optional[Callable[[int], None]] = None):
         """
         Start OSC receiver and tell serialosc to send encoder events here.
         encoder_callback(ring, delta) is called on each encoder turn.
         press_callback(ring) is called on encoder press (key down).
         """
-        self.encoder_callback = encoder_callback
-        self.press_callback   = press_callback
+        self.encoder_callback  = encoder_callback
+        self.press_callback    = press_callback
+        self.release_callback  = release_callback
 
         self.client.send_message("/sys/host", ["127.0.0.1"])
         self.client.send_message("/sys/port", [listen_port])
@@ -162,6 +165,8 @@ class ArcController:
     def _handle_encoder_key(self, addr: str, ring: int, state: int):
         if state == 1 and self.press_callback:
             self.press_callback(ring)
+        elif state == 0 and self.release_callback:
+            self.release_callback(ring)
 
     def close(self):
         if self._server:

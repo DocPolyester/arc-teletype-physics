@@ -1,15 +1,16 @@
 """
-Arc Cycles Application - Main controller with mode management
+Arc Cycles Application - Main controller with per-ring mode management
 """
 import logging
 import queue
 import subprocess
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from hardware.arc import ArcController
 from hardware.arduino_serial import ArduinoSerialHandler
 
+from .mode_base import ArcMode
 from .modes.cycles_mode import CyclesMode
 from .modes.pendulum_mode import PendulumMode
 from .modes.gravity_mode import GravityMode
@@ -19,177 +20,187 @@ from .modes.swing_mode import SwingMode
 
 logger = logging.getLogger(__name__)
 
+MODE_CLASSES = {
+    "cycles":   CyclesMode,
+    "pendulum": PendulumMode,
+    "gravity":  GravityMode,
+    "spring":   SpringMode,
+    "orbit":    OrbitMode,
+    "swing":    SwingMode,
+}
+
 
 class ArcCyclesApp:
     """
-    Arc Cycles Application - Multi-mode physics-based Arc controller.
-    Supports: Cycles, Pendulum, Gravity, Spring, Orbit, Swing modes.
+    Arc Cycles — each of the 4 rings can run a different physics mode independently.
+    Encoder events route to the matching per-ring instance (internal ring index 0).
     """
-    
-    def __init__(self, arc: ArcController,
-                 i2c_slave: Optional[ArduinoSerialHandler] = None, num_rings: int = 4):
-        """
-        Initialize Arc Cycles App.
 
-        Args:
-            arc: ArcController instance
-            i2c_slave: Optional ArduinoSerialHandler (Arduino Nano als Teletype I2C Slave)
-        """
-        self.arc = arc
+    def __init__(self, arc: ArcController,
+                 i2c_slave: Optional[ArduinoSerialHandler] = None,
+                 num_rings: int = 4,
+                 default_mode: str = "cycles",
+                 ring_modes: Optional[List[str]] = None):
+        self.arc       = arc
         self.i2c_slave = i2c_slave
         self.num_rings = num_rings
 
-        # Initialize modes
-        self.modes: Dict[str, any] = {
-            "cycles": CyclesMode(arc, num_rings=num_rings),
-            "pendulum": PendulumMode(arc),
-            "gravity": GravityMode(arc),
-            "spring": SpringMode(arc),
-            "orbit": OrbitMode(arc),
-            "swing": SwingMode(arc),
-        }
-        
-        # Current mode
-        self.current_mode_name = "cycles"
-        self.current_mode = self.modes["cycles"]
-        self.current_mode.activate()
-        
-        # Running state
-        self.running = False
+        if ring_modes is None:
+            ring_modes = [default_mode] * num_rings
+
+        self.ring_instances: List[ArcMode]  = []
+        self.ring_mode_names: List[str]     = []
+        for r in range(num_rings):
+            name = ring_modes[r] if r < len(ring_modes) else default_mode
+            inst = self._make_instance(name, r)
+            inst.activate()
+            self.ring_instances.append(inst)
+            self.ring_mode_names.append(name)
+
+        self.running     = False
         self.frame_count = 0
         self.last_update = time.time()
-        self._press_times: Dict[int, float] = {}   # ring → letzter Press-Zeitstempel
         self._encoder_queue: queue.Queue = queue.Queue()
+        self._shutdown_press_time: float = 0.0
 
-        # Connect I2C slave handler
         if self.i2c_slave:
             self.i2c_slave.set_app(self)
             self.i2c_slave.start()
 
-        logger.info("Arc Cycles App initialized")
-    
+        logger.info(f"Arc Cycles App initialized — ring modes: {self.ring_mode_names}")
+
+    # ------------------------------------------------------------------ #
+    #  Instance factory                                                    #
+    # ------------------------------------------------------------------ #
+
+    def _make_instance(self, mode_name: str, ring_index: int = 0) -> ArcMode:
+        name = mode_name if mode_name in MODE_CLASSES else "cycles"
+        cls  = MODE_CLASSES[name]
+        if name == "cycles":
+            return cls(self.arc, num_rings=1)
+        return cls(self.arc, num_rings=1, ring_hint=ring_index)
+
+    # ------------------------------------------------------------------ #
+    #  Mode switching                                                      #
+    # ------------------------------------------------------------------ #
+
     def set_mode(self, mode_name: str):
-        """
-        Switch to a different mode.
-        
-        Args:
-            mode_name: Name of mode ("cycles", "pendulum", etc.)
-        """
-        if mode_name not in self.modes:
+        """Set all rings to the same mode."""
+        if mode_name not in MODE_CLASSES:
             logger.warning(f"Unknown mode: {mode_name}")
             return
-        
-        if mode_name == self.current_mode_name:
-            return  # Already on this mode
-        
-        # Deactivate current mode
-        self.current_mode.deactivate()
-        
-        # Activate new mode
-        self.current_mode_name = mode_name
-        self.current_mode = self.modes[mode_name]
-        self.current_mode.activate()
-        
-        logger.info(f"Switched to mode: {mode_name}")
+        for r in range(self.num_rings):
+            self._replace_ring(r, mode_name)
+        logger.info(f"All rings → {mode_name}")
+
+    def set_ring_mode(self, ring: int, mode_name: str):
+        """Set a single ring to a different mode."""
+        if mode_name not in MODE_CLASSES or not (0 <= ring < self.num_rings):
+            logger.warning(f"set_ring_mode: invalid ring={ring} or mode={mode_name}")
+            return
+        self._replace_ring(ring, mode_name)
+        logger.info(f"Ring {ring} → {mode_name}")
+
+    def _replace_ring(self, ring: int, mode_name: str):
+        self.arc.clear_ring(ring)
+        old_offset = self.ring_instances[ring].arc_offset
+        inst = self._make_instance(mode_name, ring)
+        inst.arc_offset = old_offset
+        inst.activate()
+        self.ring_instances[ring]  = inst
+        self.ring_mode_names[ring] = mode_name
+
+    # ------------------------------------------------------------------ #
+    #  Orientation                                                         #
+    # ------------------------------------------------------------------ #
 
     def set_arc_orientation(self, offset: int):
-        """ARC-Ausrichtung setzen. offset in LEDs (0=quer, 48=hochkant/270°)."""
-        for mode in self.modes.values():
-            mode.arc_offset = offset
-        logger.info(f"ARC Orientierung: offset={offset} LEDs")
-    
-    def update(self):
-        """
-        Main update loop.
-        Should be called frequently (60 FPS ideal).
-        """
-        # Calculate delta time
-        now = time.time()
-        dt = now - self.last_update
-        self.last_update = now
-        
-        # Cap dt to prevent big jumps
-        dt = min(dt, 0.05)
+        for inst in self.ring_instances:
+            inst.arc_offset = offset
+        logger.info(f"ARC orientation: offset={offset} LEDs")
 
-        # Drain encoder queue — process all pending events before physics update
+    # ------------------------------------------------------------------ #
+    #  Main loop                                                           #
+    # ------------------------------------------------------------------ #
+
+    def update(self):
+        now = time.time()
+        dt  = min(now - self.last_update, 0.05)
+        self.last_update = now
+
+        # Drain encoder queue — process all pending events before physics
         while True:
             try:
                 ring, delta = self._encoder_queue.get_nowait()
-                self.current_mode.on_encoder_turn(ring, delta)
+                if 0 <= ring < self.num_rings:
+                    self.ring_instances[ring].on_encoder_turn(0, delta)
             except queue.Empty:
                 break
 
-        # Update current mode
-        self.current_mode.update(dt)
+        # Per-ring physics update
+        for inst in self.ring_instances:
+            inst.update(dt)
 
-        # Sync physics state to I2C slave EEPROM (Teletype reads from here)
+        # Sync state to I2C bridge (Teletype reads from here)
         if self.i2c_slave:
             self.i2c_slave.update_state(self)
 
-        # Display on Arc
-        self.current_mode.display()
+        # Per-ring display: each instance renders to its physical ring
+        for r in range(self.num_rings):
+            self.ring_instances[r].display_for_ring(r)
 
         self.frame_count += 1
-    
+
+    # ------------------------------------------------------------------ #
+    #  Encoder callbacks (called from OSC thread)                         #
+    # ------------------------------------------------------------------ #
+
     def on_encoder_turn(self, ring: int, delta: int):
-        """Called from OSC thread — enqueue for processing in main loop."""
         self._encoder_queue.put((ring, delta))
-    
+
     def on_encoder_press(self, ring: int):
-        """Handle Arc encoder press."""
-        now = time.time()
-        self._press_times[ring] = now
+        if ring == 0:
+            self._shutdown_press_time = time.time()
+        elif 0 <= ring < self.num_rings:
+            self.ring_instances[ring].on_encoder_press(0)
 
-        # Shutdown: Encoder 1 + 2 (ring 0 + 1) innerhalb von 2 Sekunden
-        t0 = self._press_times.get(0, 0.0)
-        t1 = self._press_times.get(1, 0.0)
-        if t0 > 0 and t1 > 0 and abs(t0 - t1) < 2.0:
-            logger.info("Encoder 0+1 gleichzeitig gedrückt → RPi Shutdown")
-            subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
-            return
+    def on_encoder_release(self, ring: int):
+        if ring == 0:
+            held = time.time() - self._shutdown_press_time
+            self._shutdown_press_time = 0.0
+            if held > 2.0:
+                logger.info("Long press encoder 0 → RPi Shutdown")
+                subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
+            else:
+                self.ring_instances[0].on_encoder_press(0)
 
-        self.current_mode.on_encoder_press(ring)
-    
+    # ------------------------------------------------------------------ #
+    #  Teletype text commands (routed from arduino_serial via on_teletype) #
+    # ------------------------------------------------------------------ #
+
     def on_teletype_command(self, command: str):
-        """
-        Handle Teletype commands.
-        Format: <MODE>.<COMMAND> [args...]
-        
-        Examples:
-        - CYCLES.RESET
-        - PEND.PERIOD 0 1000
-        - GRAV.STRENGTH 5
-        - MODE.GRAVITY (switch mode)
-        """
+        """Route MODE.xxx or PREFIX.cmd to matching ring instances."""
         parts = command.strip().upper().split()
-        
         if not parts:
             return
-        
         if parts[0].startswith("MODE."):
-            # Mode switching: MODE.CYCLES, MODE.PENDULUM, etc.
-            mode_name = parts[0][5:].lower()
-            self.set_mode(mode_name)
+            self.set_mode(parts[0][5:].lower())
             return
-        
-        # Route to current mode if it starts with mode prefix
         if "." in parts[0]:
             mode_prefix = parts[0].split(".")[0].lower()
-            
-            # Find matching mode
-            for mode_name, mode in self.modes.items():
-                if mode_name.upper() == mode_prefix or \
-                   mode_name[:4].upper() == mode_prefix[:4]:
-                    mode.teletype_command(" ".join(parts[0].split(".")[1:] + parts[1:]))
-                    return
-    
+            cmd_suffix  = " ".join(parts[0].split(".")[1:] + parts[1:])
+            for name, inst in zip(self.ring_mode_names, self.ring_instances):
+                if name.startswith(mode_prefix[:4]):
+                    inst.teletype_command(cmd_suffix)
+
+    # ------------------------------------------------------------------ #
+    #  Lifecycle                                                           #
+    # ------------------------------------------------------------------ #
+
     def start(self):
-        """Start the app main loop."""
         self.running = True
         logger.info("Arc Cycles App started")
-
         _target = 1.0 / 60.0
-
         try:
             while self.running:
                 t0 = time.perf_counter()
@@ -200,24 +211,34 @@ class ArcCyclesApp:
                 remaining = _target - (time.perf_counter() - t0)
                 if remaining > 0.001:
                     time.sleep(remaining)
-        
         except KeyboardInterrupt:
             logger.info("Interrupted")
         finally:
             self.stop()
-    
+
     def stop(self):
-        """Stop the app."""
         self.running = False
         if self.i2c_slave:
             self.i2c_slave.stop()
-        self.current_mode.clear_display()
+        for r in range(self.num_rings):
+            self.arc.clear_ring(r)
         logger.info("Arc Cycles App stopped")
-    
+
     def get_status(self) -> Dict:
-        """Get app status for monitoring."""
         return {
-            "current_mode": self.current_mode_name,
-            "frame_count": self.frame_count,
-            "available_modes": list(self.modes.keys()),
+            "ring_modes":       list(self.ring_mode_names),
+            "frame_count":      self.frame_count,
+            "available_modes":  list(MODE_CLASSES.keys()),
         }
+
+    # ------------------------------------------------------------------ #
+    #  Backward-compat properties (used by arduino_serial for logging)    #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def current_mode_name(self) -> str:
+        return self.ring_mode_names[0] if self.ring_mode_names else "cycles"
+
+    @property
+    def current_mode(self) -> Optional[ArcMode]:
+        return self.ring_instances[0] if self.ring_instances else None
