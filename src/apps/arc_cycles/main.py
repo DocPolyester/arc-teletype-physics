@@ -24,12 +24,14 @@ from .modes.chaos_mode import ChaosMode
 from .modes.probability_mode import ProbabilityMode
 from .modes.phase_shift_mode import PhaseShiftMode
 from .modes.turing_machine_mode import TuringMachine2x2
+from .modes.meadowphysics_mode import MeadowphysicsMode
 
 logger = logging.getLogger(__name__)
 
 MULTI_RING_CLASSES = {
     "phase_shift":    PhaseShiftMode,
     "turing_2x2":    TuringMachine2x2,
+    "meadowphysics": MeadowphysicsMode,
 }
 
 MODE_CLASSES = {

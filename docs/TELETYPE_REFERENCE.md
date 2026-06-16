@@ -47,14 +47,16 @@ Teletype writes **1 byte** to the Arduino. The command code itself is the value.
 | `IIS 10` | Chaos — Lorenz attractor |
 | `IIS 11` | Probability — Bernoulli gate |
 
-### Switch Mode — All Rings (Multi-Ring Modi, reserviert)
+### Switch Mode — Multi-Ring Modi
+
+Aktivieren eines Multi-Ring-Modus übernimmt alle 4 Ringe. Einzel-Ring-Modi werden pausiert bis der Multi-Modus per `IIS 1–11` beendet wird.
 
 | Command | Modus |
 |---------|-------|
-| `IIS 12` | Phase Shift — 2×2 Ringe |
-| `IIS 13` | Turing Machine — 2×2 Ringe |
-| `IIS 14` | Turing Machine — 1×4 Ringe |
-| `IIS 15` | Meadowphysics — 4 Ringe |
+| `IIS 12` | Phase Shift — Steve Reich, 2 Paare [0,1] + [2,3] |
+| `IIS 13` | Turing Machine 2×2 — zwei Shift-Register auf je 2 Ringen |
+| `IIS 14` | Meadowphysics — rhizomatisches Kaskaden-Zähler-Netzwerk (4 Ringe) |
+| `IIS 15` | reserviert |
 
 ### Clock Tick (für Clock Div/Mul)
 
@@ -221,6 +223,51 @@ Register = (Ring + 2) × 10 + State
 
 ---
 
+## IIQ — Multi-Ring Modi
+
+Wenn ein Multi-Ring-Modus aktiv ist, liefern die IIQ-Register modusspezifische Werte statt der Single-Ring-Physik.
+
+### Phase Shift (IIS 12)
+
+Ringe 0+1 = Paar A, Ringe 2+3 = Paar B. Jedes Paar ist unabhängig.
+
+| Register | Ring | State 0 (pos) | State 1 (vel) |
+|----------|------|---------------|---------------|
+| `IIQ 49 20` | Ring 0 | Rotationsposition A (0–5000) | Phasendifferenz A↔B (0–5000) |
+| `IIQ 49 30` | Ring 1 | Rotationsposition A (0–5000) | Phasendifferenz A↔B (0–5000) |
+| `IIQ 49 40` | Ring 2 | Rotationsposition B (0–5000) | Phasendifferenz C↔D (0–5000) |
+| `IIQ 49 50` | Ring 3 | Rotationsposition B (0–5000) | Phasendifferenz C↔D (0–5000) |
+
+Encoder Ring 0: Basisgeschwindigkeit · Encoder Ring 1: Drift-Rate · Press: Ringe ausrichten
+
+### Turing Machine 2×2 (IIS 13)
+
+Register A auf Ringen 0+1, Register B auf Ringen 2+3.
+
+| Register | Ring | State 0 (pos) | State 1 (vel) |
+|----------|------|---------------|---------------|
+| `IIQ 49 20` | Ring 0 | Output-Bit A (0 / 5000) | Mutations-Rate A (0–5000) |
+| `IIQ 49 30` | Ring 1 | Output-Bit A (0 / 5000) | Mutations-Rate A (0–5000) |
+| `IIQ 49 40` | Ring 2 | Output-Bit B (0 / 5000) | Mutations-Rate B (0–5000) |
+| `IIQ 49 50` | Ring 3 | Output-Bit B (0 / 5000) | Mutations-Rate B (0–5000) |
+
+Encoder Inhalts-Ring (0/2): Mutations-Rate · Encoder Status-Ring (1/3): Loop-Länge · Press: Register neu randomisieren
+
+### Meadowphysics (IIS 14)
+
+4 unabhängige Countdown-Zähler. Ring N feuert → Reset Ring N+1 (Kaskade).
+
+| Register | Ring | State 0 (pos) | State 1 (vel) |
+|----------|------|---------------|---------------|
+| `IIQ 49 20` | Ring 0 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
+| `IIQ 49 30` | Ring 1 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
+| `IIQ 49 40` | Ring 2 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
+| `IIQ 49 50` | Ring 3 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
+
+Encoder Turn: Periode ändern (2–32 Schritte, ~0.5–8 s bei 4 Hz) · Press: Zähler zurücksetzen
+
+---
+
 ## Examples
 
 ```
@@ -262,6 +309,24 @@ IIQ 32   ; 5000 = bounced this frame
 
 ; Read current probability of Ring 4 (state 3)
 IIQ 53   ; 0–5000 = 0–100%
+
+; Meadowphysics aktivieren
+IIS 14
+
+; Trigger von Ring 0 lesen (State 0)
+IIQ 20   ; 5000 = gerade gefeuert
+
+; Füllstand Ring 2 lesen (State 1)
+IIQ 41   ; 0–5000
+
+; Phase Shift aktivieren
+IIS 12
+
+; Phasendifferenz lesen (State 1, Ring 0)
+IIQ 21   ; 0 = in Phase, 5000 = maximaler Versatz
+
+; Zurück zu Single-Ring
+IIS 1
 
 ; Switch to portrait orientation
 IIS 91
@@ -309,4 +374,6 @@ CV 1 DIV MUL (IIQ 40) V 10 5000
 - IIQ always returns the state of whatever mode is active on that ring, even if rings are in different modes.
 - Holding Encoder 0 (Ring 1 encoder) for more than 2 seconds shuts down the Pi — without Teletype.
 - Per-ring mode can also be set in `config.yaml` under `ring_modes` for persistent startup configuration.
-- **IIS 12–15** (multi-ring modes) are reserved and logged but not yet active — multi-ring architecture is in development.
+
+- **IIS 12–14** (multi-ring modes) sind aktiv. IIS 15 ist reserviert.
+- Bei aktiven Multi-Ring-Modi liefern IIQ-Register modusspezifische Werte (siehe Abschnitt oben). Einzelring-Physikwerte sind während dieser Zeit nicht verfügbar.

@@ -131,6 +131,14 @@ class MultiRingMode:
     def on_encoder_press(self, ring: int):
         pass
 
+    def get_iiq_value(self, ring: int, vtype: int) -> int:
+        """
+        Return IIQ readout for a physical ring owned by this group.
+        vtype: 0=position, 1=velocity, 2=angle, 3=param1
+        Override in subclasses to expose meaningful values to Teletype.
+        """
+        return 0
+
     def _send_ring(self, physical_ring: int, leds: list):
         """Send a 64-element brightness list to a physical ring, applying orientation."""
         buf = bytearray(64)

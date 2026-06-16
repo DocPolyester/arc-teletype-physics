@@ -148,3 +148,13 @@ class TuringMachine2x2(MultiRingMode):
         i = 0 if ring in self.rings[:2] else 1
         self._reg[i]  = [random.randint(0, 1) for _ in range(_REG_SIZE)]
         self._head[i] = 0
+
+    def get_iiq_value(self, ring: int, vtype: int) -> int:
+        if ring not in self.rings:
+            return 0
+        i = self.rings.index(ring) // 2   # 0 = Register A, 1 = Register B
+        if vtype == 0:  # IIQ x0: Output-Bit (5000=1, 0=0)
+            return 5000 if self._out[i] else 0
+        if vtype == 1:  # IIQ x1: Mutations-Rate (0–5000)
+            return int(self._mut[i] * 5000)
+        return 0

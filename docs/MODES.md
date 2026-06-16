@@ -67,17 +67,54 @@ The ring displays a probability percentage as a filled arc. A trigger is "virtua
 
 ---
 
-## PART B — Multi-Ring Modes (postponed)
+## PART B — Multi-Ring Modes (implementiert)
 
-These modes require multiple rings to interact, OR use multiple encoders for independent parameters in a way that doesn't make sense for a single-ring instance.
+Diese Modi übernehmen alle 4 Ringe gleichzeitig. Aktivierung via `IIS 12–14`.  
+Zurück zu Single-Ring: `IIS 1–11`.
 
 ---
 
-### Meadowphysics (Rhizomatic Counter Network)
+### IIS 12 — Phase Shift (Steve Reich)
 
-Inspired by monome Meadowphysics. Each track has an internal counter; each ring can be configured to influence other rings' counters when it fires (freeze, increment, reset). The cross-ring dependencies are the core feature.
+Zwei Paare [Ringe 0+1] und [Ringe 2+3] drehen sich mit leicht unterschiedlichen Geschwindigkeiten. Die Phasendifferenz driftet langsam — von unisono bis maximaler Versatz und zurück.
 
-- **Why multi-ring:** The inter-ring logic is the entire point of this mode.
+- **Encoder Ring 0:** Basisgeschwindigkeit (0–30 LED/s, Default 10)
+- **Encoder Ring 1:** Drift-Rate — wie schnell die Phase wandert (0–10 LED/s, Default 1.5)
+- **Press:** Ringe neu ausrichten (Phase auf 0, Defaults zurücksetzen)
+- **Display:** Heller Punkt mit Trail. Bei Phasenübereinstimmung (< 1.5 LED Differenz): Helligkeitsboost
+- **IIQ x0:** Rotationsposition des jeweiligen Rings (0–5000)
+- **IIQ x1:** Phasendifferenz innerhalb des Paares (0 = in Phase, 5000 = max. Versatz)
+
+---
+
+### IIS 13 — Turing Machine 2×2
+
+Zwei unabhängige Shift-Register (A auf Ringen 0+1, B auf Ringen 2+3). Unterschiedliche Loop-Längen erzeugen einen sich langsam verschiebenden Interferenz-Rhythmus.
+
+- **Encoder Inhalt-Ring (0 / 2):** Mutations-Rate 0–100% (wie oft das letzte Bit neu gewürfelt wird)
+- **Encoder Status-Ring (1 / 3):** Loop-Länge [7, 8, 9, 10, 11, 12, 16, 24, 32] (Default A=16, B=12 → LCM=48)
+- **Press:** Register neu randomisieren + Playhead Reset
+- **Display:** Ring 0/2 = Bitinhalt als Segmente + Playhead. Ring 1/3 = Mutations-Rate als Füllbogen + Playhead-Echo
+- **IIQ x0:** Output-Bit des Registers (0 / 5000)
+- **IIQ x1:** Mutations-Rate (0–5000)
+
+---
+
+### IIS 14 — Meadowphysics (Rhizomatisches Kaskaden-Netzwerk)
+
+Vier unabhängige Countdown-Zähler, je einer pro Ring. Wenn ein Ring feuert, wird zusätzlich der nächste Ring zurückgesetzt (Kaskade: 0→1→2→3). Aus unterschiedlichen Perioden entstehen komplexe Überlagerungs-Rhythmen.
+
+- **Encoder Turn:** Periode dieses Rings ändern (2–32 Schritte, bei 4 Hz = 0.5–8 s)
+- **Press:** Diesen Zähler manuell zurücksetzen
+- **Display:** Füllender Bogen (leer = gerade gestartet, voll = kurz vor dem Feuern). Kurzer Flash beim Feuern. Kleiner Pip bei Position 0 als Referenz.
+- **Kaskade (fest):** Ring 0 feuert → Reset Ring 1 · Ring 1 feuert → Reset Ring 2 · Ring 2 feuert → Reset Ring 3
+- **Default-Perioden:** Ring 0=4, Ring 1=6, Ring 2=8, Ring 3=12 Schritte
+- **IIQ x0:** Trigger — 5000 wenn dieser Ring gerade gefeuert hat, sonst 0
+- **IIQ x1:** Füllstand 0–5000 (kontinuierlich)
+
+---
+
+## PART C — Multi-Ring Modes (geplant / nicht implementiert)
 
 ---
 
@@ -106,14 +143,6 @@ Teletype provides a master clock. The Pi calculates exact multiplied/divided clo
 
 ---
 
-### Turing Machine (Shift Register Morphing)
-
-A musical data word rotates in a loop. Ring 1 = mutation rate, Ring 2 = quantization scale, Ring 3+4 = loop lengths for two shift registers running against each other (e.g. 7 vs 11 steps → endless phase shifting).
-
-- **Why multi-ring:** The multi-ring interference between two loops running at different lengths is the core concept.
-
----
-
 ### Topographic Voltage Fields (Map Sequencer)
 
 A 2D landscape is generated. A virtual walker's X/Y coordinates produce two independent CV values (pitch + filter). Ring 1+2 = X and Y axis.
@@ -127,14 +156,6 @@ A 2D landscape is generated. A virtual walker's X/Y coordinates produce two inde
 A single trigger cascades through a network of simulated neurons across rings, each firing with a delay and losing energy until silence returns. Creates stochastic cloud-like trigger patterns.
 
 - **Why multi-ring:** The cascade propagates from ring to ring. A single ring would just be a decaying one-shot.
-
----
-
-### Phase Shifting (Steve Reich)
-
-Two identical loops on separate rings run at slightly different speeds. The phase relationship between them shifts over time until they re-align.
-
-- **Why multi-ring:** The phase relationship between two separate rings is the entire concept.
 
 ---
 

@@ -21,11 +21,11 @@ IIS-Befehle (alle Ringe, Single-Ring-Modi):
   IIS 49 10     → Chaos (alle Ringe)
   IIS 49 11     → Probability (alle Ringe)
 
-IIS-Befehle (Multi-Ring-Modi, noch nicht implementiert):
+IIS-Befehle (Multi-Ring-Modi):
   IIS 49 12     → Phase Shift (2×2 Ringe)
-  IIS 49 13     → Turing Machine (2×2 Ringe)
-  IIS 49 14     → Turing Machine (1×4 Ringe)
-  IIS 49 15     → Meadowphysics (4 Ringe)
+  IIS 49 13     → Turing Machine 2×2 (4 Ringe)
+  IIS 49 14     → Meadowphysics (4 Ringe, Kaskaden-Zähler-Netzwerk)
+  IIS 49 15     → reserviert
   IIS 49 88     → Clock Tick (externer Takt für Clock-Div/Mul)
 
 IIS-Befehle (einzelner Ring):
@@ -264,9 +264,11 @@ class ArduinoSerialHandler:
                 self._app.activate_multi_mode("turing_2x2", [[0, 1, 2, 3]])
                 logger.info("IIS 13: Turing Machine 2×2 aktiviert")
         elif cmd == 14:
-            logger.info("IIS 14: Turing Machine 1×4 — noch nicht implementiert")
+            if self._app:
+                self._app.activate_multi_mode("meadowphysics", [[0, 1, 2, 3]])
+                logger.info("IIS 14: Meadowphysics aktiviert (Ringe 0–3)")
         elif cmd == 15:
-            logger.info("IIS 15: Meadowphysics — noch nicht implementiert")
+            logger.debug("IIS 15: reserviert")
         elif cmd == 88:
             logger.debug("IIS 88: Clock Tick")
         # ── Per-ring mode switch ─────────────────────────────────────────
@@ -495,6 +497,12 @@ class ArduinoSerialHandler:
     # ------------------------------------------------------------------ #
 
     def _get_value(self, app, ring: int, vtype: int) -> int:
+        # Multi-ring modes liefern eigene IIQ-Werte
+        if getattr(app, 'ring_claimed_by', None) and app.ring_claimed_by[ring] == 'multi':
+            for g in app.multi_ring_groups:
+                if ring in g.rings:
+                    return g.get_iiq_value(ring, vtype)
+            return 0
         if vtype == VTYPE_POSITION: return self._get_position(app, ring)
         if vtype == VTYPE_VELOCITY: return self._get_velocity(app, ring)
         if vtype == VTYPE_ANGLE:    return self._get_angle(app, ring)

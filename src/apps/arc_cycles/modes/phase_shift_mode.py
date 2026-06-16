@@ -69,3 +69,16 @@ class PhaseShiftMode(MultiRingMode):
         self._pos[1] = 0.0
         self._speed  = SPEED_DEF
         self._drift  = DRIFT_DEF
+
+    def get_iiq_value(self, ring: int, vtype: int) -> int:
+        if ring not in self.rings:
+            return 0
+        i = self.rings.index(ring)
+        if vtype == 0:  # IIQ x0: Rotationsposition dieses Rings (0–5000)
+            return int(self._pos[i] * 5000 / 64)
+        if vtype == 1:  # IIQ x1: Phasendifferenz zwischen A und B (0–5000)
+            diff = abs(self._pos[0] - self._pos[1]) % 64
+            if diff > 32:
+                diff = 64 - diff
+            return int(diff * 5000 / 32)
+        return 0
