@@ -22,7 +22,7 @@ All physics parameters are tuned for the **DIY Arc by [theslowgrowth](https://gi
 - **ARC display**: 64 LEDs per ring (0 = left/horizontal, 32 = right, clockwise)
 - **Orientation**: default horizontal; switchable to portrait (270°) with `IIS 91`
 - **Update rate**: ~60 Hz physics loop
-- **Per-ring modes**: each ring runs its own mode instance — assign with `IIS 11–46` (Teletype) or `ring_modes` list in `config.yaml`
+- **Per-ring modes**: each ring runs its own mode instance — assign with `IIS 101–171` (Teletype) or `ring_modes` list in `config.yaml`
 - **Encoder press** (single ring): resets that ring's state
 - **Hold encoder 0 for > 2 s**: shuts down the Raspberry Pi
 
@@ -183,11 +183,16 @@ Bright main dot (brightness 6–15, proportional to current speed — brightest 
 
 ## Mode Overview
 
-| Nr | All rings | Single ring | Name | Description |
-|----|-----------|-------------|------|-------------|
-| 1 | `IIS 1` | `IIS 11/21/31/41` | Cycles | Rotating dot with inertia and friction |
-| 2 | `IIS 2` | `IIS 12/22/32/42` | Pendulum | Harmonic pendulum |
-| 3 | `IIS 3` | `IIS 13/23/33/43` | Gravity | Particles under gravity with bouncing |
-| 4 | `IIS 4` | `IIS 14/24/34/44` | Spring | Spring mechanics with resonance |
-| 5 | `IIS 5` | `IIS 15/25/35/45` | Orbit | Orbital model / planetary system |
-| 6 | `IIS 6` | `IIS 16/26/36/46` | Swing | Nonlinear pendulum (RK4) |
+| Nr | All rings | Ring 1 / 2 / 3 / 4 | Name | Description |
+|----|-----------|---------------------|------|-------------|
+| 1  | `IIS 1`  | `IIS 101/121/141/161` | Cycles      | Rotating dot with inertia and friction |
+| 2  | `IIS 2`  | `IIS 102/122/142/162` | Pendulum    | Harmonic pendulum |
+| 3  | `IIS 3`  | `IIS 103/123/143/163` | Gravity     | Particles under gravity with bouncing |
+| 4  | `IIS 4`  | `IIS 104/124/144/164` | Spring      | Spring mechanics with resonance |
+| 5  | `IIS 5`  | `IIS 105/125/145/165` | Orbit       | Orbital model / planetary system |
+| 6  | `IIS 6`  | `IIS 106/126/146/166` | Swing       | Nonlinear pendulum (RK4) |
+| 7  | `IIS 7`  | `IIS 107/127/147/167` | Euclidean   | Bjorklund rhythm sequencer |
+| 8  | `IIS 8`  | `IIS 108/128/148/168` | Bounce      | Bouncing ball under gravity |
+| 9  | `IIS 9`  | `IIS 109/129/149/169` | Drunk       | Brownian motion walk |
+| 10 | `IIS 10` | `IIS 110/130/150/170` | Chaos       | Lorenz strange attractor |
+| 11 | `IIS 11` | `IIS 111/131/151/171` | Probability | Bernoulli gate |

@@ -17,16 +17,26 @@ from .modes.gravity_mode import GravityMode
 from .modes.spring_mode import SpringMode
 from .modes.orbit_mode import OrbitMode
 from .modes.swing_mode import SwingMode
+from .modes.euclidean_mode import EuclideanMode
+from .modes.bounce_mode import BounceMode
+from .modes.drunk_mode import DrunkMode
+from .modes.chaos_mode import ChaosMode
+from .modes.probability_mode import ProbabilityMode
 
 logger = logging.getLogger(__name__)
 
 MODE_CLASSES = {
-    "cycles":   CyclesMode,
-    "pendulum": PendulumMode,
-    "gravity":  GravityMode,
-    "spring":   SpringMode,
-    "orbit":    OrbitMode,
-    "swing":    SwingMode,
+    "cycles":      CyclesMode,
+    "pendulum":    PendulumMode,
+    "gravity":     GravityMode,
+    "spring":      SpringMode,
+    "orbit":       OrbitMode,
+    "swing":       SwingMode,
+    "euclidean":   EuclideanMode,
+    "bounce":      BounceMode,
+    "drunk":       DrunkMode,
+    "chaos":       ChaosMode,
+    "probability": ProbabilityMode,
 }
 
 

@@ -49,7 +49,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MODE_NAMES = ["cycles", "pendulum", "gravity", "spring", "orbit", "swing"]
+MODE_NAMES = [
+    "cycles", "pendulum", "gravity", "spring", "orbit", "swing",
+    "euclidean", "bounce", "drunk", "chaos", "probability",
+]
 
 VTYPE_POSITION = 0
 VTYPE_VELOCITY = 1
@@ -234,17 +237,19 @@ class ArduinoSerialHandler:
 
     def _dispatch_ring_select(self, cmd: int):
         # Einzel-Byte IIS
-        if 1 <= cmd <= 6:
+        if 1 <= cmd <= len(MODE_NAMES):
             if self._app:
-                self._app.set_mode(MODE_NAMES[cmd - 1])
-                logger.info(f"IIS Mode → {MODE_NAMES[cmd - 1]}")
-        elif 11 <= cmd <= 46:
-            # Per-ring mode: tens digit = ring+1, units digit = mode 1-6
-            ring     = cmd // 10 - 1
-            mode_idx = cmd % 10
-            if 1 <= mode_idx <= 6 and self._app:
-                self._app.set_ring_mode(ring, MODE_NAMES[mode_idx - 1])
-                logger.info(f"IIS Ring {ring} → {MODE_NAMES[mode_idx - 1]}")
+                name = MODE_NAMES[cmd - 1]
+                self._app.set_mode(name)
+                logger.info(f"IIS Mode → {name}")
+        elif 101 <= cmd <= 172:
+            # 3-digit per-ring scheme: ring=(cmd-101)//20, mode=(cmd-101)%20+1
+            ring     = (cmd - 101) // 20
+            mode_idx = (cmd - 101) % 20 + 1
+            if 1 <= mode_idx <= len(MODE_NAMES) and self._app:
+                name = MODE_NAMES[mode_idx - 1]
+                self._app.set_ring_mode(ring, name)
+                logger.info(f"IIS Ring {ring} → {name}")
         elif cmd == 90 and self._app:
             self._app.set_arc_orientation(0)
         elif cmd == 91 and self._app:
@@ -266,15 +271,17 @@ class ArduinoSerialHandler:
 
         if cmd == 0x00:
             # Zwei-Byte IIS: hi=0x00, lo = Befehlswert
-            if 1 <= lo <= 6 and app:
-                app.set_mode(MODE_NAMES[lo - 1])
-                logger.info(f"IIS Mode → {MODE_NAMES[lo - 1]}")
-            elif 11 <= lo <= 46 and app:
-                ring     = lo // 10 - 1
-                mode_idx = lo % 10
-                if 1 <= mode_idx <= 6:
-                    app.set_ring_mode(ring, MODE_NAMES[mode_idx - 1])
-                    logger.info(f"IIS Ring {ring} → {MODE_NAMES[mode_idx - 1]}")
+            if 1 <= lo <= len(MODE_NAMES) and app:
+                name = MODE_NAMES[lo - 1]
+                app.set_mode(name)
+                logger.info(f"IIS Mode → {name}")
+            elif 101 <= lo <= 172 and app:
+                ring     = (lo - 101) // 20
+                mode_idx = (lo - 101) % 20 + 1
+                if 1 <= mode_idx <= len(MODE_NAMES):
+                    name = MODE_NAMES[mode_idx - 1]
+                    app.set_ring_mode(ring, name)
+                    logger.info(f"IIS Ring {ring} → {name}")
             elif lo == 90 and app:
                 app.set_arc_orientation(0)
             elif lo == 91 and app:
@@ -451,6 +458,16 @@ class ArduinoSerialHandler:
                 raw = int(round(inst.CENTER + inst.theta[0] * inst.SCALE)) % 64
             elif name == "orbit":
                 raw = int(inst.centers[0]) % 64
+            elif name == "euclidean":
+                raw = inst._head[0] * 64 // max(1, inst.n[0])
+            elif name == "bounce":
+                raw = int(round(inst.position[0])) % 64
+            elif name == "drunk":
+                raw = int(round(inst.position[0])) % 64
+            elif name == "chaos":
+                raw = int((inst._x[0] + 25.0) * 63.0 / 50.0) % 64
+            elif name == "probability":
+                raw = int(round(inst.probability[0] * 63))
             else:
                 raw = int(inst.physics.rings[0][0].position) % 64
             return raw * 5000 // 63
@@ -468,12 +485,23 @@ class ArduinoSerialHandler:
                 return int(inst.omega[0] * 1592)
             if name == "orbit":
                 return int(inst.angular_velocities[0] * 1592)
+            if name == "bounce":
+                return int(inst.velocity[0] * 100)
+            if name == "drunk":
+                return int(inst._last_dir[0] * inst.step_size[0] * 100)
+            if name == "chaos":
+                return int(inst._y[0] * 100)
+            if name == "euclidean":
+                # 5000 = triggered this frame, 0 = not
+                return 5000 if inst._triggered[0] else 0
+            if name == "probability":
+                return 5000 if inst._fired[0] else 0
             return int(inst.physics.rings[0][0].velocity * 2500)
         except Exception:
             return 0
 
     def _get_angle(self, app, ring: int) -> int:
-        """Winkel skaliert auf ±5000 (±π/2 = ±5000)."""
+        """Winkel skaliert auf ±5000 (±π/2 = ±5000). Für neue Modi: bounce=bounce-flag, chaos=Z-Wert."""
         HALF_PI = math.pi / 2
         try:
             inst = app.ring_instances[ring]
@@ -486,6 +514,10 @@ class ArduinoSerialHandler:
                 amp    = max(1, inst.amplitudes[0])
                 ratio  = max(-1.0, min(1.0, (pos - center) / amp))
                 return int(math.asin(ratio) * 5000 / HALF_PI)
+            if name == "bounce":
+                return 5000 if inst._bounced[0] else 0
+            if name == "chaos":
+                return int(inst._z[0] * 100)
         except Exception:
             pass
         return 0
@@ -505,6 +537,16 @@ class ArduinoSerialHandler:
                 return int(inst.periods[0] * 1000)
             if name == "swing":
                 return int(inst.damping * 2500)
+            if name == "euclidean":
+                return int(inst.k[0] * 5000 // max(1, inst.n[0]))
+            if name == "bounce":
+                return int(max(0.0, inst.position[0]) * 5000 // 63)
+            if name == "drunk":
+                return int(inst.step_size[0] * 312)  # 0–16 → 0–5000
+            if name == "chaos":
+                return int(inst.rho[0] * 5000 // 60)
+            if name == "probability":
+                return int(inst.probability[0] * 5000)
         except Exception:
             return 0
         return 0

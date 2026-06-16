@@ -35,44 +35,86 @@ Teletype writes **1 byte** to the Arduino. No `value` parameter needed — the c
 
 | Command | Mode |
 |---------|------|
-| `IIS 1` | Cycles — rotating dot with inertia |
-| `IIS 2` | Pendulum — harmonic pendulum |
-| `IIS 3` | Gravity — gravity with bouncing |
-| `IIS 4` | Spring — spring mechanics / resonance |
-| `IIS 5` | Orbit — orbital model |
-| `IIS 6` | Swing — nonlinear pendulum (RK4) |
+| `IIS 1`  | Cycles — rotating dot with inertia |
+| `IIS 2`  | Pendulum — harmonic pendulum |
+| `IIS 3`  | Gravity — gravity with bouncing |
+| `IIS 4`  | Spring — spring mechanics / resonance |
+| `IIS 5`  | Orbit — orbital model |
+| `IIS 6`  | Swing — nonlinear pendulum (RK4) |
+| `IIS 7`  | Euclidean — Bjorklund rhythm sequencer |
+| `IIS 8`  | Bounce — bouncing ball rhythm |
+| `IIS 9`  | Drunk — Brownian motion walk |
+| `IIS 10` | Chaos — Lorenz attractor |
+| `IIS 11` | Probability — Bernoulli gate |
 
-### Switch Mode — Single Ring
+### Switch Mode — Single Ring (3-digit scheme)
 
 Each ring can run a different mode independently.  
-Command format: **tens digit = ring (1–4), units digit = mode (1–6)**
+Decode: `ring = (cmd − 101) // 20`, `mode = (cmd − 101) % 20 + 1`
 
-| Command | Ring | Mode |
-|---------|------|------|
-| `IIS 11` | Ring 1 | Cycles |
-| `IIS 12` | Ring 1 | Pendulum |
-| `IIS 13` | Ring 1 | Gravity |
-| `IIS 14` | Ring 1 | Spring |
-| `IIS 15` | Ring 1 | Orbit |
-| `IIS 16` | Ring 1 | Swing |
-| `IIS 21` | Ring 2 | Cycles |
-| `IIS 22` | Ring 2 | Pendulum |
-| `IIS 23` | Ring 2 | Gravity |
-| `IIS 24` | Ring 2 | Spring |
-| `IIS 25` | Ring 2 | Orbit |
-| `IIS 26` | Ring 2 | Swing |
-| `IIS 31` | Ring 3 | Cycles |
-| `IIS 32` | Ring 3 | Pendulum |
-| `IIS 33` | Ring 3 | Gravity |
-| `IIS 34` | Ring 3 | Spring |
-| `IIS 35` | Ring 3 | Orbit |
-| `IIS 36` | Ring 3 | Swing |
-| `IIS 41` | Ring 4 | Cycles |
-| `IIS 42` | Ring 4 | Pendulum |
-| `IIS 43` | Ring 4 | Gravity |
-| `IIS 44` | Ring 4 | Spring |
-| `IIS 45` | Ring 4 | Orbit |
-| `IIS 46` | Ring 4 | Swing |
+**Ring 1 (IIS 101–111)**
+
+| Command | Mode |
+|---------|------|
+| `IIS 101` | Cycles |
+| `IIS 102` | Pendulum |
+| `IIS 103` | Gravity |
+| `IIS 104` | Spring |
+| `IIS 105` | Orbit |
+| `IIS 106` | Swing |
+| `IIS 107` | Euclidean |
+| `IIS 108` | Bounce |
+| `IIS 109` | Drunk |
+| `IIS 110` | Chaos |
+| `IIS 111` | Probability |
+
+**Ring 2 (IIS 121–131)**
+
+| Command | Mode |
+|---------|------|
+| `IIS 121` | Cycles |
+| `IIS 122` | Pendulum |
+| `IIS 123` | Gravity |
+| `IIS 124` | Spring |
+| `IIS 125` | Orbit |
+| `IIS 126` | Swing |
+| `IIS 127` | Euclidean |
+| `IIS 128` | Bounce |
+| `IIS 129` | Drunk |
+| `IIS 130` | Chaos |
+| `IIS 131` | Probability |
+
+**Ring 3 (IIS 141–151)**
+
+| Command | Mode |
+|---------|------|
+| `IIS 141` | Cycles |
+| `IIS 142` | Pendulum |
+| `IIS 143` | Gravity |
+| `IIS 144` | Spring |
+| `IIS 145` | Orbit |
+| `IIS 146` | Swing |
+| `IIS 147` | Euclidean |
+| `IIS 148` | Bounce |
+| `IIS 149` | Drunk |
+| `IIS 150` | Chaos |
+| `IIS 151` | Probability |
+
+**Ring 4 (IIS 161–171)**
+
+| Command | Mode |
+|---------|------|
+| `IIS 161` | Cycles |
+| `IIS 162` | Pendulum |
+| `IIS 163` | Gravity |
+| `IIS 164` | Spring |
+| `IIS 165` | Orbit |
+| `IIS 166` | Swing |
+| `IIS 167` | Euclidean |
+| `IIS 168` | Bounce |
+| `IIS 169` | Drunk |
+| `IIS 170` | Chaos |
+| `IIS 171` | Probability |
 
 ### Arc Orientation
 
@@ -117,16 +159,49 @@ Register = Ring × 10 + State
 | 2 | Angle | Angle (Swing and Pendulum only) | −5000 … +5000 |
 | 3 | Param1 | Mode-specific parameter (see table below) | 0 … 5000 |
 
+### State 1 (Velocity / Trigger) per Mode
+
+For rhythm modes, State 1 doubles as a trigger-fired flag:
+
+| Mode | State 1 Meaning | Range |
+|------|-----------------|-------|
+| Cycles | Speed × 2500 | ±5000 |
+| Pendulum | Particle velocity | ±5000 |
+| Gravity | Particle velocity | ±5000 |
+| Spring | Particle velocity | ±5000 |
+| Orbit | Angular velocity | ±5000 |
+| Swing | Angular velocity ω | ±5000 |
+| Euclidean | Trigger fired this frame | 5000 = yes, 0 = no |
+| Bounce | Ball velocity × 100 | ±5000 |
+| Drunk | Last step direction × step_size × 100 | ±5000 |
+| Chaos | Lorenz Y value × 100 | ±5000 |
+| Probability | Gate fired this frame | 5000 = yes, 0 = no |
+
+### State 2 (Angle / Event Flag) per Mode
+
+| Mode | State 2 Meaning | Range |
+|------|-----------------|-------|
+| Swing | Angle θ (±π/2 → ±5000) | ±5000 |
+| Pendulum | Angle (asin of displacement) | ±5000 |
+| Bounce | Floor-hit flag this frame | 5000 = yes, 0 = no |
+| Chaos | Lorenz Z value × 100 | ±5000 |
+| others | — (always 0) | 0 |
+
 ### Param1 (State 3) per Mode
 
-| Mode | Param1 Content | Unit |
-|------|----------------|------|
-| Cycles | — (always 0) | — |
+| Mode | Param1 Content | Range |
+|------|----------------|-------|
+| Cycles | — (always 0) | 0 |
 | Pendulum | Oscillation period | ms (1000–2500) |
 | Gravity | Gravity strength × 500 | 0–5000 |
 | Spring | Spring constant k × 1000 | 100–5000 |
 | Orbit | Orbital period | ms (1000–2500) |
 | Swing | Damping coefficient × 2500 | 0–5000 |
+| Euclidean | Active beats k / n × 5000 | 0–5000 |
+| Bounce | Ball position (0–5000) | 0–5000 |
+| Drunk | Step size × 312 (0–16 → 0–5000) | 0–5000 |
+| Chaos | ρ (rho) / 60 × 5000 | 0–5000 |
+| Probability | Probability × 5000 | 0–5000 |
 
 ---
 
@@ -139,11 +214,14 @@ IIA 49
 ; All rings → Swing mode
 IIS 6
 
-; Ring 1 → Cycles, Ring 2 → Swing, Ring 3 → Pendulum, Ring 4 → Gravity
-IIS 11
-IIS 26
-IIS 32
-IIS 43
+; All rings → Euclidean mode
+IIS 7
+
+; Ring 1 → Euclidean, Ring 2 → Bounce, Ring 3 → Chaos, Ring 4 → Probability
+IIS 107
+IIS 128
+IIS 143
+IIS 171
 
 ; Read position of Ring 1 (state 0)
 IIQ 10   ; returns 0–5000
@@ -151,14 +229,17 @@ IIQ 10   ; returns 0–5000
 ; Read angular velocity of Ring 3 (state 1)
 IIQ 31   ; returns −5000…+5000
 
-; Read angle θ of Ring 2 (state 2, Swing / Pendulum only)
-IIQ 22   ; returns −5000…+5000  (−π/2…+π/2 → −5000…+5000)
+; Read Euclidean trigger fired on Ring 1 (state 1)
+IIQ 11   ; returns 5000 if trigger fired this frame, else 0
 
-; Read oscillation period of Ring 4 (state 3, Pendulum mode)
-IIQ 43   ; e.g. 2500 = 2.5 seconds
+; Read probability gate fired on Ring 4 (state 1)
+IIQ 41   ; returns 5000 = fired, 0 = not
 
-; Switch Ring 2 to Orbit mid-scene
-IIS 25
+; Read ball floor-hit on Ring 2 (state 2, Bounce mode)
+IIQ 22   ; returns 5000 = bounced this frame
+
+; Read current probability of Ring 4 (state 3)
+IIQ 43   ; 0–5000 = 0–100%
 
 ; Switch to portrait orientation
 IIS 91
@@ -174,19 +255,27 @@ IIS 99
 ```
 ; INIT
 IIA 49
-; Ring 1 Cycles, Ring 2 Swing, Ring 3 Swing (different length), Ring 4 Orbit
-IIS 11
-IIS 26
-IIS 36
-IIS 45
+; Ring 1 Euclidean, Ring 2 Bounce, Ring 3 Drunk, Ring 4 Probability
+IIS 107
+IIS 128
+IIS 149
+IIS 171
 
-; METRO (e.g. every 250 ms)
-X IIQ 10       ; position of Ring 1 (Cycles)
-Y IIQ 21       ; velocity of Ring 2 (Swing)
+; METRO (every ~16 ms via EVERY 1)
+; Fire TR 1 on Euclidean beat
+X IIQ 11
+IF GT X 0: TR.PULSE 1
 
-; If Swing angle > 4000: switch Ring 2 to Spring
-Z IIQ 22
-IF GT Z 4000: IIS 24
+; Fire TR 2 on ball bounce
+Y IIQ 22
+IF GT Y 0: TR.PULSE 2
+
+; Fire TR 3 on probability gate
+Z IIQ 41
+IF GT Z 0: TR.PULSE 3
+
+; Use Drunk walk position as CV
+CV 1 DIV MUL (IIQ 30) V 10 5000
 ```
 
 ---
