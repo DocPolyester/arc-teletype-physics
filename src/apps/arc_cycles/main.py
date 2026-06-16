@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from hardware.arc import ArcController
 from hardware.arduino_serial import ArduinoSerialHandler
 
-from .mode_base import ArcMode
+from .mode_base import ArcMode, MultiRingMode
 from .modes.cycles_mode import CyclesMode
 from .modes.pendulum_mode import PendulumMode
 from .modes.gravity_mode import GravityMode
@@ -22,8 +22,13 @@ from .modes.bounce_mode import BounceMode
 from .modes.drunk_mode import DrunkMode
 from .modes.chaos_mode import ChaosMode
 from .modes.probability_mode import ProbabilityMode
+from .modes.phase_shift_mode import PhaseShiftMode
 
 logger = logging.getLogger(__name__)
+
+MULTI_RING_CLASSES = {
+    "phase_shift": PhaseShiftMode,
+}
 
 MODE_CLASSES = {
     "cycles":      CyclesMode,
@@ -67,6 +72,10 @@ class ArcCyclesApp:
             self.ring_instances.append(inst)
             self.ring_mode_names.append(name)
 
+        # Multi-ring parallel layer
+        self.ring_claimed_by: List[str]         = ['single'] * num_rings
+        self.multi_ring_groups: List[MultiRingMode] = []
+
         self.running     = False
         self.frame_count = 0
         self.last_update = time.time()
@@ -95,21 +104,57 @@ class ArcCyclesApp:
     # ------------------------------------------------------------------ #
 
     def set_mode(self, mode_name: str):
-        """Set all rings to the same mode."""
+        """Set all rings to the same single-ring mode (releases any multi-ring groups)."""
         if mode_name not in MODE_CLASSES:
             logger.warning(f"Unknown mode: {mode_name}")
             return
+        self._deactivate_multi()
         for r in range(self.num_rings):
             self._replace_ring(r, mode_name)
         logger.info(f"All rings → {mode_name}")
 
     def set_ring_mode(self, ring: int, mode_name: str):
-        """Set a single ring to a different mode."""
+        """Set a single ring to a different single-ring mode."""
         if mode_name not in MODE_CLASSES or not (0 <= ring < self.num_rings):
             logger.warning(f"set_ring_mode: invalid ring={ring} or mode={mode_name}")
             return
+        # Release ring from any multi-ring group that owns it
+        self._release_ring_from_multi(ring)
         self._replace_ring(ring, mode_name)
         logger.info(f"Ring {ring} → {mode_name}")
+
+    def activate_multi_mode(self, mode_name: str, groups: list):
+        """
+        Activate a multi-ring mode.
+        groups: list of ring-index lists, one per group instance.
+        Example: activate_multi_mode("phase_shift", [[0,1],[2,3]])
+        """
+        if mode_name not in MULTI_RING_CLASSES:
+            logger.warning(f"Unknown multi-ring mode: {mode_name}")
+            return
+        cls = MULTI_RING_CLASSES[mode_name]
+        self._deactivate_multi()
+        offset = self.ring_instances[0].arc_offset
+        for rings in groups:
+            for r in rings:
+                self.arc.clear_ring(r)
+                self.ring_claimed_by[r] = 'multi'
+            group = cls(rings=rings, arc=self.arc, arc_offset=offset)
+            self.multi_ring_groups.append(group)
+        logger.info(f"Multi-ring mode '{mode_name}' active on groups {groups}")
+
+    def _deactivate_multi(self):
+        for group in self.multi_ring_groups:
+            for r in group.rings:
+                self.arc.clear_ring(r)
+                self.ring_claimed_by[r] = 'single'
+        self.multi_ring_groups.clear()
+
+    def _release_ring_from_multi(self, ring: int):
+        if self.ring_claimed_by[ring] != 'multi':
+            return
+        self.multi_ring_groups = [g for g in self.multi_ring_groups if ring not in g.rings]
+        self.ring_claimed_by[ring] = 'single'
 
     def _replace_ring(self, ring: int, mode_name: str):
         self.arc.clear_ring(ring)
@@ -127,6 +172,8 @@ class ArcCyclesApp:
     def set_arc_orientation(self, offset: int):
         for inst in self.ring_instances:
             inst.arc_offset = offset
+        for group in self.multi_ring_groups:
+            group.arc_offset = offset
         logger.info(f"ARC orientation: offset={offset} LEDs")
 
     # ------------------------------------------------------------------ #
@@ -138,26 +185,41 @@ class ArcCyclesApp:
         dt  = min(now - self.last_update, 0.05)
         self.last_update = now
 
-        # Drain encoder queue — process all pending events before physics
+        # Drain encoder queue
         while True:
             try:
                 ring, delta = self._encoder_queue.get_nowait()
                 if 0 <= ring < self.num_rings:
-                    self.ring_instances[ring].on_encoder_turn(0, delta)
+                    if self.ring_claimed_by[ring] == 'multi':
+                        for g in self.multi_ring_groups:
+                            if ring in g.rings:
+                                g.on_encoder_turn(ring, delta)
+                    else:
+                        self.ring_instances[ring].on_encoder_turn(0, delta)
             except queue.Empty:
                 break
 
-        # Per-ring physics update
-        for inst in self.ring_instances:
-            inst.update(dt)
+        # Single-ring physics update
+        for r in range(self.num_rings):
+            if self.ring_claimed_by[r] == 'single':
+                self.ring_instances[r].update(dt)
+
+        # Multi-ring physics update
+        for group in self.multi_ring_groups:
+            group.update(dt)
 
         # Sync state to I2C bridge (Teletype reads from here)
         if self.i2c_slave:
             self.i2c_slave.update_state(self)
 
-        # Per-ring display: each instance renders to its physical ring
+        # Display: single-ring
         for r in range(self.num_rings):
-            self.ring_instances[r].display_for_ring(r)
+            if self.ring_claimed_by[r] == 'single':
+                self.ring_instances[r].display_for_ring(r)
+
+        # Display: multi-ring
+        for group in self.multi_ring_groups:
+            group.display()
 
         self.frame_count += 1
 
@@ -172,7 +234,12 @@ class ArcCyclesApp:
         if ring == 0:
             self._shutdown_press_time = time.time()
         elif 0 <= ring < self.num_rings:
-            self.ring_instances[ring].on_encoder_press(0)
+            if self.ring_claimed_by[ring] == 'multi':
+                for g in self.multi_ring_groups:
+                    if ring in g.rings:
+                        g.on_encoder_press(ring)
+            else:
+                self.ring_instances[ring].on_encoder_press(0)
 
     def on_encoder_release(self, ring: int):
         if ring == 0:
@@ -182,7 +249,12 @@ class ArcCyclesApp:
                 logger.info("Long press encoder 0 → RPi Shutdown")
                 subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
             else:
-                self.ring_instances[0].on_encoder_press(0)
+                if self.ring_claimed_by[0] == 'multi':
+                    for g in self.multi_ring_groups:
+                        if 0 in g.rings:
+                            g.on_encoder_press(0)
+                else:
+                    self.ring_instances[0].on_encoder_press(0)
 
     # ------------------------------------------------------------------ #
     #  Teletype text commands (routed from arduino_serial via on_teletype) #

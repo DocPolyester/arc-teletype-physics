@@ -256,7 +256,9 @@ class ArduinoSerialHandler:
                 self._app.set_mode(name)
                 logger.info(f"IIS Mode → {name}")
         elif cmd == 12:
-            logger.info("IIS 12: Phase Shift — noch nicht implementiert")
+            if self._app:
+                self._app.activate_multi_mode("phase_shift", [[0, 1], [2, 3]])
+                logger.info("IIS 12: Phase Shift aktiviert (Ringe 0+1 / 2+3)")
         elif cmd == 13:
             logger.info("IIS 13: Turing Machine 2×2 — noch nicht implementiert")
         elif cmd == 14:

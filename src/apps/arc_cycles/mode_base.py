@@ -105,3 +105,36 @@ class ArcMode(ABC):
         Allows Teletype to control this mode.
         """
         pass
+
+
+class MultiRingMode:
+    """
+    Base class for modes that own multiple physical rings simultaneously.
+    Unlike ArcMode (which always operates on internal ring 0), a MultiRingMode
+    directly controls a list of physical rings and handles their display itself.
+    """
+
+    def __init__(self, rings: list, arc: "ArcController", arc_offset: int = 0):
+        self.rings      = rings       # physical ring indices this group owns
+        self.arc        = arc
+        self.arc_offset = arc_offset
+
+    def update(self, dt: float):
+        pass
+
+    def display(self):
+        pass
+
+    def on_encoder_turn(self, ring: int, delta: int):
+        pass
+
+    def on_encoder_press(self, ring: int):
+        pass
+
+    def _send_ring(self, physical_ring: int, leds: list):
+        """Send a 64-element brightness list to a physical ring, applying orientation."""
+        buf = bytearray(64)
+        off = self.arc_offset
+        for i, b in enumerate(leds):
+            buf[(i + off) % 64] = max(0, min(15, b))
+        self.arc.set_ring_map(physical_ring, buf)
