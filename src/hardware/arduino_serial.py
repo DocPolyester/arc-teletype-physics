@@ -236,20 +236,52 @@ class ArduinoSerialHandler:
             i += 2
 
     def _dispatch_ring_select(self, cmd: int):
-        # Einzel-Byte IIS
-        if 1 <= cmd <= len(MODE_NAMES):
+        # ── All-ring mode switch ─────────────────────────────────────────
+        # IIS 1-9: modes 1-9 (safe below IIQ register range 10-43)
+        # IIS 50/51: modes 10/11 (IIS 10/11 would clash with IIQ registers!)
+        if 1 <= cmd <= 9:
             if self._app:
                 name = MODE_NAMES[cmd - 1]
                 self._app.set_mode(name)
                 logger.info(f"IIS Mode → {name}")
-        elif 101 <= cmd <= 172:
-            # 3-digit per-ring scheme: ring=(cmd-101)//20, mode=(cmd-101)%20+1
-            ring     = (cmd - 101) // 20
-            mode_idx = (cmd - 101) % 20 + 1
-            if 1 <= mode_idx <= len(MODE_NAMES) and self._app:
+        elif cmd == 50:
+            if self._app:
+                self._app.set_mode(MODE_NAMES[9])   # chaos
+                logger.info("IIS Mode → chaos")
+        elif cmd == 51:
+            if self._app:
+                self._app.set_mode(MODE_NAMES[10])  # probability
+                logger.info("IIS Mode → probability")
+        # ── Per-ring mode switch ─────────────────────────────────────────
+        # Ring 1: IIS 101-111 (1xx prefix)
+        # Ring 2: IIS 201-211 (2xx prefix, fits in byte)
+        # Ring 3: IIS 221-231 (byte limit prevents 3xx)
+        # Ring 4: IIS 241-251 (byte limit prevents 4xx)
+        elif 101 <= cmd <= 111:
+            mode_idx = cmd - 100
+            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
                 name = MODE_NAMES[mode_idx - 1]
-                self._app.set_ring_mode(ring, name)
-                logger.info(f"IIS Ring {ring} → {name}")
+                self._app.set_ring_mode(0, name)
+                logger.info(f"IIS Ring 1 → {name}")
+        elif 201 <= cmd <= 211:
+            mode_idx = cmd - 200
+            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
+                name = MODE_NAMES[mode_idx - 1]
+                self._app.set_ring_mode(1, name)
+                logger.info(f"IIS Ring 2 → {name}")
+        elif 221 <= cmd <= 231:
+            mode_idx = cmd - 220
+            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
+                name = MODE_NAMES[mode_idx - 1]
+                self._app.set_ring_mode(2, name)
+                logger.info(f"IIS Ring 3 → {name}")
+        elif 241 <= cmd <= 251:
+            mode_idx = cmd - 240
+            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
+                name = MODE_NAMES[mode_idx - 1]
+                self._app.set_ring_mode(3, name)
+                logger.info(f"IIS Ring 4 → {name}")
+        # ── System ──────────────────────────────────────────────────────
         elif cmd == 90 and self._app:
             self._app.set_arc_orientation(0)
         elif cmd == 91 and self._app:
@@ -257,8 +289,6 @@ class ArduinoSerialHandler:
         elif cmd == 99:
             logger.info("IIS: RPi Shutdown angefordert")
             subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
-        elif 0 <= cmd <= 3:
-            self._vring = cmd
 
     def _dispatch(self, hi: int, lo: int):
         app = self._app
@@ -270,18 +300,29 @@ class ArduinoSerialHandler:
         cmd = hi
 
         if cmd == 0x00:
-            # Zwei-Byte IIS: hi=0x00, lo = Befehlswert
-            if 1 <= lo <= len(MODE_NAMES) and app:
-                name = MODE_NAMES[lo - 1]
-                app.set_mode(name)
-                logger.info(f"IIS Mode → {name}")
-            elif 101 <= lo <= 172 and app:
-                ring     = (lo - 101) // 20
-                mode_idx = (lo - 101) % 20 + 1
+            # Zwei-Byte IIS: hi=0x00, lo = Befehlswert (same scheme as _dispatch_ring_select)
+            if 1 <= lo <= 9 and app:
+                app.set_mode(MODE_NAMES[lo - 1])
+            elif lo == 50 and app:
+                app.set_mode(MODE_NAMES[9])   # chaos
+            elif lo == 51 and app:
+                app.set_mode(MODE_NAMES[10])  # probability
+            elif 101 <= lo <= 111 and app:
+                mode_idx = lo - 100
                 if 1 <= mode_idx <= len(MODE_NAMES):
-                    name = MODE_NAMES[mode_idx - 1]
-                    app.set_ring_mode(ring, name)
-                    logger.info(f"IIS Ring {ring} → {name}")
+                    app.set_ring_mode(0, MODE_NAMES[mode_idx - 1])
+            elif 201 <= lo <= 211 and app:
+                mode_idx = lo - 200
+                if 1 <= mode_idx <= len(MODE_NAMES):
+                    app.set_ring_mode(1, MODE_NAMES[mode_idx - 1])
+            elif 221 <= lo <= 231 and app:
+                mode_idx = lo - 220
+                if 1 <= mode_idx <= len(MODE_NAMES):
+                    app.set_ring_mode(2, MODE_NAMES[mode_idx - 1])
+            elif 241 <= lo <= 251 and app:
+                mode_idx = lo - 240
+                if 1 <= mode_idx <= len(MODE_NAMES):
+                    app.set_ring_mode(3, MODE_NAMES[mode_idx - 1])
             elif lo == 90 and app:
                 app.set_arc_orientation(0)
             elif lo == 91 and app:

@@ -44,15 +44,18 @@ Teletype writes **1 byte** to the Arduino. No `value` parameter needed — the c
 | `IIS 7`  | Euclidean — Bjorklund rhythm sequencer |
 | `IIS 8`  | Bounce — bouncing ball rhythm |
 | `IIS 9`  | Drunk — Brownian motion walk |
-| `IIS 10` | Chaos — Lorenz attractor |
-| `IIS 11` | Probability — Bernoulli gate |
+| `IIS 50` | Chaos — Lorenz attractor |
+| `IIS 51` | Probability — Bernoulli gate |
 
-### Switch Mode — Single Ring (3-digit scheme)
+> **Note:** IIS 10 and 11 are avoided — they collide with IIQ register codes for Ring 1 (IIQ register 10 = position, 11 = velocity). IIS 50 and 51 are used instead for Chaos and Probability.
 
-Each ring can run a different mode independently.  
-Decode: `ring = (cmd − 101) // 20`, `mode = (cmd − 101) % 20 + 1`
+### Switch Mode — Single Ring
 
-**Ring 1 (IIS 101–111)**
+Each ring can run a different mode independently.
+
+> **Note on numbering:** Teletype IIS sends a single byte (max 255). Rings 1 and 2 fit in `1xx` / `2xx` ranges. Rings 3 and 4 cannot use `3xx` / `4xx` (would exceed 255) — they use `221–231` and `241–251` instead.
+
+**Ring 1 — IIS 101–111** (prefix `1xx`)
 
 | Command | Mode |
 |---------|------|
@@ -68,53 +71,53 @@ Decode: `ring = (cmd − 101) // 20`, `mode = (cmd − 101) % 20 + 1`
 | `IIS 110` | Chaos |
 | `IIS 111` | Probability |
 
-**Ring 2 (IIS 121–131)**
+**Ring 2 — IIS 201–211** (prefix `2xx`)
 
 | Command | Mode |
 |---------|------|
-| `IIS 121` | Cycles |
-| `IIS 122` | Pendulum |
-| `IIS 123` | Gravity |
-| `IIS 124` | Spring |
-| `IIS 125` | Orbit |
-| `IIS 126` | Swing |
-| `IIS 127` | Euclidean |
-| `IIS 128` | Bounce |
-| `IIS 129` | Drunk |
-| `IIS 130` | Chaos |
-| `IIS 131` | Probability |
+| `IIS 201` | Cycles |
+| `IIS 202` | Pendulum |
+| `IIS 203` | Gravity |
+| `IIS 204` | Spring |
+| `IIS 205` | Orbit |
+| `IIS 206` | Swing |
+| `IIS 207` | Euclidean |
+| `IIS 208` | Bounce |
+| `IIS 209` | Drunk |
+| `IIS 210` | Chaos |
+| `IIS 211` | Probability |
 
-**Ring 3 (IIS 141–151)**
-
-| Command | Mode |
-|---------|------|
-| `IIS 141` | Cycles |
-| `IIS 142` | Pendulum |
-| `IIS 143` | Gravity |
-| `IIS 144` | Spring |
-| `IIS 145` | Orbit |
-| `IIS 146` | Swing |
-| `IIS 147` | Euclidean |
-| `IIS 148` | Bounce |
-| `IIS 149` | Drunk |
-| `IIS 150` | Chaos |
-| `IIS 151` | Probability |
-
-**Ring 4 (IIS 161–171)**
+**Ring 3 — IIS 221–231** (byte limit prevents `3xx`)
 
 | Command | Mode |
 |---------|------|
-| `IIS 161` | Cycles |
-| `IIS 162` | Pendulum |
-| `IIS 163` | Gravity |
-| `IIS 164` | Spring |
-| `IIS 165` | Orbit |
-| `IIS 166` | Swing |
-| `IIS 167` | Euclidean |
-| `IIS 168` | Bounce |
-| `IIS 169` | Drunk |
-| `IIS 170` | Chaos |
-| `IIS 171` | Probability |
+| `IIS 221` | Cycles |
+| `IIS 222` | Pendulum |
+| `IIS 223` | Gravity |
+| `IIS 224` | Spring |
+| `IIS 225` | Orbit |
+| `IIS 226` | Swing |
+| `IIS 227` | Euclidean |
+| `IIS 228` | Bounce |
+| `IIS 229` | Drunk |
+| `IIS 230` | Chaos |
+| `IIS 231` | Probability |
+
+**Ring 4 — IIS 241–251** (byte limit prevents `4xx`)
+
+| Command | Mode |
+|---------|------|
+| `IIS 241` | Cycles |
+| `IIS 242` | Pendulum |
+| `IIS 243` | Gravity |
+| `IIS 244` | Spring |
+| `IIS 245` | Orbit |
+| `IIS 246` | Swing |
+| `IIS 247` | Euclidean |
+| `IIS 248` | Bounce |
+| `IIS 249` | Drunk |
+| `IIS 250` | Chaos |
+| `IIS 251` | Probability |
 
 ### Arc Orientation
 
@@ -217,11 +220,14 @@ IIS 6
 ; All rings → Euclidean mode
 IIS 7
 
+; All rings → Chaos (IIS 50 because IIS 10 clashes with IIQ register)
+IIS 50
+
 ; Ring 1 → Euclidean, Ring 2 → Bounce, Ring 3 → Chaos, Ring 4 → Probability
 IIS 107
-IIS 128
-IIS 143
-IIS 171
+IIS 208
+IIS 230
+IIS 251
 
 ; Read position of Ring 1 (state 0)
 IIQ 10   ; returns 0–5000
@@ -257,9 +263,9 @@ IIS 99
 IIA 49
 ; Ring 1 Euclidean, Ring 2 Bounce, Ring 3 Drunk, Ring 4 Probability
 IIS 107
-IIS 128
-IIS 149
-IIS 171
+IIS 208
+IIS 229
+IIS 251
 
 ; METRO (every ~16 ms via EVERY 1)
 ; Fire TR 1 on Euclidean beat

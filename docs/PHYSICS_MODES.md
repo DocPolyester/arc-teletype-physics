@@ -183,16 +183,19 @@ Bright main dot (brightness 6–15, proportional to current speed — brightest 
 
 ## Mode Overview
 
-| Nr | All rings | Ring 1 / 2 / 3 / 4 | Name | Description |
-|----|-----------|---------------------|------|-------------|
-| 1  | `IIS 1`  | `IIS 101/121/141/161` | Cycles      | Rotating dot with inertia and friction |
-| 2  | `IIS 2`  | `IIS 102/122/142/162` | Pendulum    | Harmonic pendulum |
-| 3  | `IIS 3`  | `IIS 103/123/143/163` | Gravity     | Particles under gravity with bouncing |
-| 4  | `IIS 4`  | `IIS 104/124/144/164` | Spring      | Spring mechanics with resonance |
-| 5  | `IIS 5`  | `IIS 105/125/145/165` | Orbit       | Orbital model / planetary system |
-| 6  | `IIS 6`  | `IIS 106/126/146/166` | Swing       | Nonlinear pendulum (RK4) |
-| 7  | `IIS 7`  | `IIS 107/127/147/167` | Euclidean   | Bjorklund rhythm sequencer |
-| 8  | `IIS 8`  | `IIS 108/128/148/168` | Bounce      | Bouncing ball under gravity |
-| 9  | `IIS 9`  | `IIS 109/129/149/169` | Drunk       | Brownian motion walk |
-| 10 | `IIS 10` | `IIS 110/130/150/170` | Chaos       | Lorenz strange attractor |
-| 11 | `IIS 11` | `IIS 111/131/151/171` | Probability | Bernoulli gate |
+Ring columns: R1 = Ring 1, R2 = Ring 2, R3 = Ring 3, R4 = Ring 4.  
+Byte limit (max 255) prevents `3xx`/`4xx` for rings 3 and 4.
+
+| Nr | All rings | R1 | R2 | R3 | R4 | Name | Description |
+|----|-----------|----|----|----|----|------|-------------|
+| 1  | `IIS 1`  | 101 | 201 | 221 | 241 | Cycles      | Rotating dot with inertia and friction |
+| 2  | `IIS 2`  | 102 | 202 | 222 | 242 | Pendulum    | Harmonic pendulum |
+| 3  | `IIS 3`  | 103 | 203 | 223 | 243 | Gravity     | Particles under gravity with bouncing |
+| 4  | `IIS 4`  | 104 | 204 | 224 | 244 | Spring      | Spring mechanics with resonance |
+| 5  | `IIS 5`  | 105 | 205 | 225 | 245 | Orbit       | Orbital model / planetary system |
+| 6  | `IIS 6`  | 106 | 206 | 226 | 246 | Swing       | Nonlinear pendulum (RK4) |
+| 7  | `IIS 7`  | 107 | 207 | 227 | 247 | Euclidean   | Bjorklund rhythm sequencer |
+| 8  | `IIS 8`  | 108 | 208 | 228 | 248 | Bounce      | Bouncing ball under gravity |
+| 9  | `IIS 9`  | 109 | 209 | 229 | 249 | Drunk       | Brownian motion walk |
+| 10 | `IIS 50` | 110 | 210 | 230 | 250 | Chaos       | Lorenz strange attractor |
+| 11 | `IIS 51` | 111 | 211 | 231 | 251 | Probability | Bernoulli gate |

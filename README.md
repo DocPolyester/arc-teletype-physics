@@ -41,17 +41,19 @@ Details: [docs/PHYSICS_MODES.md](docs/PHYSICS_MODES.md)
 IIA 49       ; set I2C address (once)
 
 ; Switch all rings to the same mode
-IIS 1        ; Cycles      IIS 2  Pendulum   IIS 3  Gravity
-IIS 4        ; Spring      IIS 5  Orbit      IIS 6  Swing
-IIS 7        ; Euclidean   IIS 8  Bounce     IIS 9  Drunk
-IIS 10       ; Chaos       IIS 11 Probability
+IIS 1        ; Cycles    IIS 2  Pendulum  IIS 3  Gravity
+IIS 4        ; Spring    IIS 5  Orbit     IIS 6  Swing
+IIS 7        ; Euclidean IIS 8  Bounce    IIS 9  Drunk
+IIS 50       ; Chaos     IIS 51 Probability
+; (IIS 10/11 avoided — clash with IIQ register codes for Ring 1)
 
-; Switch a single ring — 3-digit scheme: ring block × 20 + mode
-; Ring 1: 101–111, Ring 2: 121–131, Ring 3: 141–151, Ring 4: 161–171
+; Switch a single ring (per-ring 3-digit scheme):
+; Ring 1: 101–111  Ring 2: 201–211  Ring 3: 221–231  Ring 4: 241–251
+; Mode offset: Ring1 +100, Ring2 +200, Ring3 +220, Ring4 +240
 IIS 107      ; Ring 1 → Euclidean
-IIS 128      ; Ring 2 → Bounce
-IIS 149      ; Ring 3 → Drunk
-IIS 170      ; Ring 4 → Chaos
+IIS 208      ; Ring 2 → Bounce
+IIS 229      ; Ring 3 → Drunk
+IIS 250      ; Ring 4 → Chaos
 
 ; Orientation
 IIS 91       ; portrait (270°)      IIS 90  horizontal (default)
