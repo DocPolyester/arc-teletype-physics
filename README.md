@@ -40,16 +40,14 @@ Details: [docs/PHYSICS_MODES.md](docs/PHYSICS_MODES.md)
 ```
 IIA 49       ; set I2C address (once)
 
-; Switch all rings to the same mode
+; Switch all rings to the same mode (IIS 1-11)
 IIS 1        ; Cycles    IIS 2  Pendulum  IIS 3  Gravity
 IIS 4        ; Spring    IIS 5  Orbit     IIS 6  Swing
 IIS 7        ; Euclidean IIS 8  Bounce    IIS 9  Drunk
-IIS 50       ; Chaos     IIS 51 Probability
-; (IIS 10/11 avoided — clash with IIQ register codes for Ring 1)
+IIS 10       ; Chaos     IIS 11 Probability
 
 ; Switch a single ring (per-ring 3-digit scheme):
 ; Ring 1: 101–111  Ring 2: 201–211  Ring 3: 221–231  Ring 4: 241–251
-; Mode offset: Ring1 +100, Ring2 +200, Ring3 +220, Ring4 +240
 IIS 107      ; Ring 1 → Euclidean
 IIS 208      ; Ring 2 → Bounce
 IIS 229      ; Ring 3 → Drunk
@@ -59,12 +57,12 @@ IIS 250      ; Ring 4 → Chaos
 IIS 91       ; portrait (270°)      IIS 90  horizontal (default)
 IIS 99       ; shut down Pi
 
-; Read state per ring
-IIQ 10       ; Ring 1 position   (0–5000)
-IIQ 11       ; Ring 1 velocity / trigger-fired flag
-IIQ 12       ; Ring 1 angle / event flag (Swing, Pendulum, Bounce, Chaos)
-IIQ 13       ; Ring 1 param1 (mode-specific)
-; Rings 2–4: IIQ 2x / 3x / 4x
+; Read state per ring (registers: Ring1=20-23, Ring2=30-33, Ring3=40-43, Ring4=50-53)
+IIQ 20       ; Ring 1 position   (0–5000)
+IIQ 21       ; Ring 1 velocity / trigger-fired flag
+IIQ 22       ; Ring 1 angle / event flag (Swing, Pendulum, Bounce, Chaos)
+IIQ 23       ; Ring 1 param1 (mode-specific)
+; Rings 2–4: IIQ 3x / 4x / 5x
 ```
 
 Each ring reports the state of whatever mode is currently running on it.  

@@ -2,16 +2,20 @@
  * teletype_bridge.ino  v2.0
  *
  * IIQ-Kommando-Schema (1 Byte, 0-255):
- *   cmd 10..19  → Ring 0, Zustand (cmd % 10)
- *   cmd 20..29  → Ring 1, Zustand (cmd % 10)
- *   cmd 30..39  → Ring 2, Zustand (cmd % 10)
- *   cmd 40..49  → Ring 3, Zustand (cmd % 10)
+ *   cmd 20..23  → Ring 0, Zustand (cmd - 20)
+ *   cmd 30..33  → Ring 1, Zustand (cmd - 30)
+ *   cmd 40..43  → Ring 2, Zustand (cmd - 40)
+ *   cmd 50..53  → Ring 3, Zustand (cmd - 50)
+ *   Formel: ring = (cmd / 10) - 2,  state = cmd % 10
  *
  * Zustände (state = cmd % 10):
  *   0 = Position   (0..63, Arc-Position)
  *   1 = Velocity   (Geschwindigkeit × 100)
  *   2 = Angle      (Winkel × 10, Grad)
  *   3 = Param1     (modusspezifisch)
+ *
+ * Hinweis: IIS 10-15 sind für Modus-Befehle reserviert (Chaos, Probability,
+ * Phase Shift, Turing Machine, Meadowphysics). Deshalb startet IIQ bei 20.
  *
  * Serial RPi → Arduino (34 Bytes):
  *   [0xAA] [32 Bytes Daten] [XOR-Checksum]
@@ -57,8 +61,8 @@ void onReceive(int numBytes) {
         }
         if (tel_cmd.len > 0) {
             uint8_t cmd = tel_cmd.data[0];
-            if (cmd >= 10 && cmd <= 49) {
-                req_ring  = (cmd / 10) - 1;   // 10→0, 20→1, 30→2, 40→3
+            if (cmd >= 20 && cmd <= 53) {
+                req_ring  = (cmd / 10) - 2;   // 20→0, 30→1, 40→2, 50→3
                 req_state = cmd % 10;
                 if (req_state >= N_STATES) req_state = 0;
             }

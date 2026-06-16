@@ -20,9 +20,10 @@ arc_prefix: "/monome"
 # Arduino Serial Bridge (Arduino Nano V3.0 as I2C slave for Teletype)
 # Hardware: Arduino Nano V3.0 via USB to RPi
 #   Arduino A4=SDA, A5=SCL → Teletype I2C bus (4.7 kΩ pull-ups required, level shifter for 5V↔3.3V)
-#   USB: /dev/ttyUSB1  (ttyUSB0 = monome Arc)
+#   USB serial: FTDI FT232R, serial A5069RR4
+#   Stable path: /dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A5069RR4-if00-port0
 # I2C address: 0x31 (49 decimal → Teletype: IIA 49)
 arduino_serial:
   enabled: true
-  port: "/dev/ttyUSB1"
+  port: "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A5069RR4-if00-port0"
   address: 0x31

@@ -186,8 +186,8 @@ Bright main dot (brightness 6–15, proportional to current speed — brightest 
 Ring columns: R1 = Ring 1, R2 = Ring 2, R3 = Ring 3, R4 = Ring 4.  
 Byte limit (max 255) prevents `3xx`/`4xx` for rings 3 and 4.
 
-| Nr | All rings | R1 | R2 | R3 | R4 | Name | Description |
-|----|-----------|----|----|----|----|------|-------------|
+| Nr | All rings | R1  | R2  | R3  | R4  | Name | Description |
+|----|-----------|-----|-----|-----|-----|------|-------------|
 | 1  | `IIS 1`  | 101 | 201 | 221 | 241 | Cycles      | Rotating dot with inertia and friction |
 | 2  | `IIS 2`  | 102 | 202 | 222 | 242 | Pendulum    | Harmonic pendulum |
 | 3  | `IIS 3`  | 103 | 203 | 223 | 243 | Gravity     | Particles under gravity with bouncing |
@@ -197,5 +197,5 @@ Byte limit (max 255) prevents `3xx`/`4xx` for rings 3 and 4.
 | 7  | `IIS 7`  | 107 | 207 | 227 | 247 | Euclidean   | Bjorklund rhythm sequencer |
 | 8  | `IIS 8`  | 108 | 208 | 228 | 248 | Bounce      | Bouncing ball under gravity |
 | 9  | `IIS 9`  | 109 | 209 | 229 | 249 | Drunk       | Brownian motion walk |
-| 10 | `IIS 50` | 110 | 210 | 230 | 250 | Chaos       | Lorenz strange attractor |
-| 11 | `IIS 51` | 111 | 211 | 231 | 251 | Probability | Bernoulli gate |
+| 10 | `IIS 10` | 110 | 210 | 230 | 250 | Chaos       | Lorenz strange attractor |
+| 11 | `IIS 11` | 111 | 211 | 231 | 251 | Probability | Bernoulli gate |

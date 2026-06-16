@@ -16,23 +16,35 @@ Serial-Protokoll RPi→Arduino (34 Bytes):
 Serial-Protokoll Arduino→RPi (N+3 Bytes):
   [0xBB][N][data0..dataN-1][xor_chk]
 
-IIS-Befehle (alle Ringe):
-  IIS 49 1..6   → Moduswechsel alle Ringe (1=cycles 2=pendulum 3=gravity 4=spring 5=orbit 6=swing)
+IIS-Befehle (alle Ringe, Single-Ring-Modi):
+  IIS 49 1..9   → Moduswechsel alle Ringe (1=cycles .. 9=drunk)
+  IIS 49 10     → Chaos (alle Ringe)
+  IIS 49 11     → Probability (alle Ringe)
+
+IIS-Befehle (Multi-Ring-Modi, noch nicht implementiert):
+  IIS 49 12     → Phase Shift (2×2 Ringe)
+  IIS 49 13     → Turing Machine (2×2 Ringe)
+  IIS 49 14     → Turing Machine (1×4 Ringe)
+  IIS 49 15     → Meadowphysics (4 Ringe)
+  IIS 49 88     → Clock Tick (externer Takt für Clock-Div/Mul)
+
+IIS-Befehle (einzelner Ring):
+  IIS 49 101..111 → Ring 0 Modus 1..11
+  IIS 49 201..211 → Ring 1 Modus 1..11
+  IIS 49 221..231 → Ring 2 Modus 1..11
+  IIS 49 241..251 → Ring 3 Modus 1..11
+
+IIS-Befehle (System):
   IIS 49 90/91  → ARC-Ausrichtung (0°/270°)
   IIS 49 99     → RPi herunterfahren
 
-IIS-Befehle (einzelner Ring):
-  IIS 49 11..16 → Ring 0 Modus 1..6
-  IIS 49 21..26 → Ring 1 Modus 1..6
-  IIS 49 31..36 → Ring 2 Modus 1..6
-  IIS 49 41..46 → Ring 3 Modus 1..6
-
 IIQ-Abfragen (Teletype schreibt Register, liest 2 Bytes int16):
-  IIQ 49 10..19 → Ring 0, Zustand 0..9
-  IIQ 49 20..29 → Ring 1, Zustand 0..9
-  IIQ 49 30..39 → Ring 2, Zustand 0..9
-  IIQ 49 40..49 → Ring 3, Zustand 0..9
+  IIQ 49 20..23 → Ring 0, Zustand 0..3
+  IIQ 49 30..33 → Ring 1, Zustand 0..3
+  IIQ 49 40..43 → Ring 2, Zustand 0..3
+  IIQ 49 50..53 → Ring 3, Zustand 0..3
   Zustände: 0=Position(0-5000)  1=Velocity(±5000)  2=Angle(±5000)  3=Param1(0-5000)
+  (Hinweis: Startet bei 20 statt 10, da IIS 10-15 für Modi reserviert sind)
 """
 
 import logging
@@ -237,21 +249,22 @@ class ArduinoSerialHandler:
 
     def _dispatch_ring_select(self, cmd: int):
         # ── All-ring mode switch ─────────────────────────────────────────
-        # IIS 1-9: modes 1-9 (safe below IIQ register range 10-43)
-        # IIS 50/51: modes 10/11 (IIS 10/11 would clash with IIQ registers!)
-        if 1 <= cmd <= 9:
+        # IIS 1-11: modes 1-11 (IIQ registers shifted to 20-53, no collision)
+        if 1 <= cmd <= len(MODE_NAMES):
             if self._app:
                 name = MODE_NAMES[cmd - 1]
                 self._app.set_mode(name)
                 logger.info(f"IIS Mode → {name}")
-        elif cmd == 50:
-            if self._app:
-                self._app.set_mode(MODE_NAMES[9])   # chaos
-                logger.info("IIS Mode → chaos")
-        elif cmd == 51:
-            if self._app:
-                self._app.set_mode(MODE_NAMES[10])  # probability
-                logger.info("IIS Mode → probability")
+        elif cmd == 12:
+            logger.info("IIS 12: Phase Shift — noch nicht implementiert")
+        elif cmd == 13:
+            logger.info("IIS 13: Turing Machine 2×2 — noch nicht implementiert")
+        elif cmd == 14:
+            logger.info("IIS 14: Turing Machine 1×4 — noch nicht implementiert")
+        elif cmd == 15:
+            logger.info("IIS 15: Meadowphysics — noch nicht implementiert")
+        elif cmd == 88:
+            logger.debug("IIS 88: Clock Tick")
         # ── Per-ring mode switch ─────────────────────────────────────────
         # Ring 1: IIS 101-111 (1xx prefix)
         # Ring 2: IIS 201-211 (2xx prefix, fits in byte)
@@ -301,12 +314,8 @@ class ArduinoSerialHandler:
 
         if cmd == 0x00:
             # Zwei-Byte IIS: hi=0x00, lo = Befehlswert (same scheme as _dispatch_ring_select)
-            if 1 <= lo <= 9 and app:
+            if 1 <= lo <= len(MODE_NAMES) and app:
                 app.set_mode(MODE_NAMES[lo - 1])
-            elif lo == 50 and app:
-                app.set_mode(MODE_NAMES[9])   # chaos
-            elif lo == 51 and app:
-                app.set_mode(MODE_NAMES[10])  # probability
             elif 101 <= lo <= 111 and app:
                 mode_idx = lo - 100
                 if 1 <= mode_idx <= len(MODE_NAMES):
