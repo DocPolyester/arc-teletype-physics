@@ -66,72 +66,47 @@ Aktivieren eines Multi-Ring-Modus übernimmt alle 4 Ringe. Einzel-Ring-Modi werd
 
 ### Switch Mode — Single Ring
 
-Teletype IIS überträgt ein einzelnes Byte (max 255).  
-Rings 1 und 2 nutzen `1xx` / `2xx` Präfixe. Ringe 3 und 4 können nicht `3xx` / `4xx` verwenden (> 255) und liegen daher im oberen 200er-Bereich.
+Teletype's `IIS` sendet einen **16-bit Integer**. Der Arduino leitet den vollen Wert weiter.  
+Decode: `Ring = Wert ÷ 100 − 1`, `Mode = Wert mod 100`
 
-**Ring 1 — IIS 101–111**
+| IIS | Ring | Mode |
+|-----|------|------|
+| 101 | 1 | Cycles |
+| 102 | 1 | Pendulum |
+| 103 | 1 | Gravity |
+| 104 | 1 | Spring |
+| 105 | 1 | Orbit |
+| 106 | 1 | Swing |
+| 107 | 1 | Euclidean |
+| 108 | 1 | Bounce |
+| 109 | 1 | Drunk |
+| 110 | 1 | Chaos |
+| 111 | 1 | Probability |
+| 201 | 2 | Cycles |
+| … | … | … |
+| 211 | 2 | Probability |
+| 301 | 3 | Cycles |
+| … | … | … |
+| 311 | 3 | Probability |
+| 401 | 4 | Cycles |
+| … | … | … |
+| 411 | 4 | Probability |
 
-| IIS | Mode |
-|-----|------|
-| 101 | Cycles |
-| 102 | Pendulum |
-| 103 | Gravity |
-| 104 | Spring |
-| 105 | Orbit |
-| 106 | Swing |
-| 107 | Euclidean |
-| 108 | Bounce |
-| 109 | Drunk |
-| 110 | Chaos |
-| 111 | Probability |
+Vollständige Tabelle (alle 4 Ringe × 11 Modi = 44 Codes):
 
-**Ring 2 — IIS 201–211**
-
-| IIS | Mode |
-|-----|------|
-| 201 | Cycles |
-| 202 | Pendulum |
-| 203 | Gravity |
-| 204 | Spring |
-| 205 | Orbit |
-| 206 | Swing |
-| 207 | Euclidean |
-| 208 | Bounce |
-| 209 | Drunk |
-| 210 | Chaos |
-| 211 | Probability |
-
-**Ring 3 — IIS 221–231**
-
-| IIS | Mode |
-|-----|------|
-| 221 | Cycles |
-| 222 | Pendulum |
-| 223 | Gravity |
-| 224 | Spring |
-| 225 | Orbit |
-| 226 | Swing |
-| 227 | Euclidean |
-| 228 | Bounce |
-| 229 | Drunk |
-| 230 | Chaos |
-| 231 | Probability |
-
-**Ring 4 — IIS 241–251**
-
-| IIS | Mode |
-|-----|------|
-| 241 | Cycles |
-| 242 | Pendulum |
-| 243 | Gravity |
-| 244 | Spring |
-| 245 | Orbit |
-| 246 | Swing |
-| 247 | Euclidean |
-| 248 | Bounce |
-| 249 | Drunk |
-| 250 | Chaos |
-| 251 | Probability |
+| Mode | Ring 1 | Ring 2 | Ring 3 | Ring 4 |
+|------|--------|--------|--------|--------|
+| Cycles      | 101 | 201 | 301 | 401 |
+| Pendulum    | 102 | 202 | 302 | 402 |
+| Gravity     | 103 | 203 | 303 | 403 |
+| Spring      | 104 | 204 | 304 | 404 |
+| Orbit       | 105 | 205 | 305 | 405 |
+| Swing       | 106 | 206 | 306 | 406 |
+| Euclidean   | 107 | 207 | 307 | 407 |
+| Bounce      | 108 | 208 | 308 | 408 |
+| Drunk       | 109 | 209 | 309 | 409 |
+| Chaos       | 110 | 210 | 310 | 410 |
+| Probability | 111 | 211 | 311 | 411 |
 
 ### Arc Orientation
 

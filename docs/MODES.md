@@ -192,38 +192,20 @@ To support all 12 modes with per-ring assignment, the existing 2-digit IIS schem
 
 *Note: IIS 10 and 11 conflict with the old per-ring scheme (IIS 11 was Ring 1 → Cycles). The new 3-digit per-ring scheme below replaces IIS 11–46.*
 
-### Per-Ring Mode Switch — 3-Digit Scheme
+### Per-Ring Mode Switch
 
-Byte range 100–172. Each ring gets a block of 20 slots (supports up to 20 modes per ring).
+Teletype sendet 16-bit Integer. Decode: `Ring = Wert ÷ 100 − 1`, `Mode = Wert mod 100`
 
-```
-Ring 1: IIS 101–112   (101 + mode - 1)
-Ring 2: IIS 121–132   (121 + mode - 1)
-Ring 3: IIS 141–152   (141 + mode - 1)
-Ring 4: IIS 161–172   (161 + mode - 1)
-```
-
-| IIS | Ring | Mode |
-|-----|------|------|
-| 101 | 1 | Cycles |
-| 102 | 1 | Pendulum |
-| 103 | 1 | Gravity |
-| 104 | 1 | Spring |
-| 105 | 1 | Orbit |
-| 106 | 1 | Swing |
-| 107 | 1 | Euclidean |
-| 108 | 1 | Bouncing Ball |
-| 109 | 1 | Drunk Walk |
-| 110 | 1 | Chaos Attractor |
-| 111 | 1 | Probability Gate |
-| 121 | 2 | Cycles |
-| … | … | … |
-| 131 | 2 | Probability Gate |
-| 141 | 3 | Cycles |
-| … | … | … |
-| 151 | 3 | Probability Gate |
-| 161 | 4 | Cycles |
-| … | … | … |
-| 171 | 4 | Probability Gate |
-
-Decode formula: `ring = (cmd - 101) // 20`, `mode = (cmd - 101) % 20 + 1`
+| Mode | Ring 1 | Ring 2 | Ring 3 | Ring 4 |
+|------|--------|--------|--------|--------|
+| Cycles      | 101 | 201 | 301 | 401 |
+| Pendulum    | 102 | 202 | 302 | 402 |
+| Gravity     | 103 | 203 | 303 | 403 |
+| Spring      | 104 | 204 | 304 | 404 |
+| Orbit       | 105 | 205 | 305 | 405 |
+| Swing       | 106 | 206 | 306 | 406 |
+| Euclidean   | 107 | 207 | 307 | 407 |
+| Bounce      | 108 | 208 | 308 | 408 |
+| Drunk       | 109 | 209 | 309 | 409 |
+| Chaos       | 110 | 210 | 310 | 410 |
+| Probability | 111 | 211 | 311 | 411 |

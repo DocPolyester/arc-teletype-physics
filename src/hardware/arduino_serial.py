@@ -29,10 +29,11 @@ IIS-Befehle (Multi-Ring-Modi):
   IIS 49 88     → Clock Tick (externer Takt für Clock-Div/Mul)
 
 IIS-Befehle (einzelner Ring):
-  IIS 49 101..111 → Ring 0 Modus 1..11
-  IIS 49 201..211 → Ring 1 Modus 1..11
-  IIS 49 221..231 → Ring 2 Modus 1..11
-  IIS 49 241..251 → Ring 3 Modus 1..11
+  IIS 49 101..111 → Ring 1 Modus 1..11
+  IIS 49 201..211 → Ring 2 Modus 1..11
+  IIS 49 301..311 → Ring 3 Modus 1..11
+  IIS 49 401..411 → Ring 4 Modus 1..11
+  (Teletype sendet 16-bit; Decode: ring = val//100 - 1, mode = val%100)
 
 IIS-Befehle (System):
   IIS 49 90/91  → ARC-Ausrichtung (0°/270°)
@@ -271,35 +272,6 @@ class ArduinoSerialHandler:
             logger.debug("IIS 15: reserviert")
         elif cmd == 88:
             logger.debug("IIS 88: Clock Tick")
-        # ── Per-ring mode switch ─────────────────────────────────────────
-        # Ring 1: IIS 101-111 (1xx prefix)
-        # Ring 2: IIS 201-211 (2xx prefix, fits in byte)
-        # Ring 3: IIS 221-231 (byte limit prevents 3xx)
-        # Ring 4: IIS 241-251 (byte limit prevents 4xx)
-        elif 101 <= cmd <= 111:
-            mode_idx = cmd - 100
-            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
-                name = MODE_NAMES[mode_idx - 1]
-                self._app.set_ring_mode(0, name)
-                logger.info(f"IIS Ring 1 → {name}")
-        elif 201 <= cmd <= 211:
-            mode_idx = cmd - 200
-            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
-                name = MODE_NAMES[mode_idx - 1]
-                self._app.set_ring_mode(1, name)
-                logger.info(f"IIS Ring 2 → {name}")
-        elif 221 <= cmd <= 231:
-            mode_idx = cmd - 220
-            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
-                name = MODE_NAMES[mode_idx - 1]
-                self._app.set_ring_mode(2, name)
-                logger.info(f"IIS Ring 3 → {name}")
-        elif 241 <= cmd <= 251:
-            mode_idx = cmd - 240
-            if self._app and 1 <= mode_idx <= len(MODE_NAMES):
-                name = MODE_NAMES[mode_idx - 1]
-                self._app.set_ring_mode(3, name)
-                logger.info(f"IIS Ring 4 → {name}")
         # ── System ──────────────────────────────────────────────────────
         elif cmd == 90 and self._app:
             self._app.set_arc_orientation(0)
@@ -316,40 +288,24 @@ class ArduinoSerialHandler:
             self._dispatch_second_byte(hi, lo)
             return
 
+        # Per-Ring Modus: IIS 1xx / 2xx / 3xx / 4xx (16-bit, alle 11 Modi)
+        # Teletype sendet 16-bit → Arduino leitet hi+lo weiter
+        # Decode: ring = val//100 - 1,  mode = val%100
+        full_val = (hi << 8) | lo
+        ring     = full_val // 100 - 1
+        mode_idx = full_val % 100
+        if app and 0 <= ring <= 3 and 1 <= mode_idx <= len(MODE_NAMES):
+            name = MODE_NAMES[mode_idx - 1]
+            app.set_ring_mode(ring, name)
+            logger.info(f"IIS Ring {ring + 1} → {name}")
+            return
+
         cmd = hi
 
         if cmd == 0x00:
-            # Zwei-Byte IIS: hi=0x00, lo = Befehlswert (same scheme as _dispatch_ring_select)
-            if 1 <= lo <= len(MODE_NAMES) and app:
-                app.set_mode(MODE_NAMES[lo - 1])
-            elif 101 <= lo <= 111 and app:
-                mode_idx = lo - 100
-                if 1 <= mode_idx <= len(MODE_NAMES):
-                    app.set_ring_mode(0, MODE_NAMES[mode_idx - 1])
-            elif 201 <= lo <= 211 and app:
-                mode_idx = lo - 200
-                if 1 <= mode_idx <= len(MODE_NAMES):
-                    app.set_ring_mode(1, MODE_NAMES[mode_idx - 1])
-            elif 221 <= lo <= 231 and app:
-                mode_idx = lo - 220
-                if 1 <= mode_idx <= len(MODE_NAMES):
-                    app.set_ring_mode(2, MODE_NAMES[mode_idx - 1])
-            elif 241 <= lo <= 251 and app:
-                mode_idx = lo - 240
-                if 1 <= mode_idx <= len(MODE_NAMES):
-                    app.set_ring_mode(3, MODE_NAMES[mode_idx - 1])
-            elif lo == 90 and app:
-                app.set_arc_orientation(0)
-            elif lo == 91 and app:
-                app.set_arc_orientation(48)
-            elif lo == 99:
-                logger.info("IIS: RPi Shutdown angefordert")
-                subprocess.Popen(['sudo', 'shutdown', '-h', 'now'])
-
-        elif cmd == 0x01:
-            self._vtype = (lo >> 4) & 0x0F
-            self._vring = lo & 0x0F
-            logger.debug(f"SELECT vtype={self._vtype} ring={self._vring:#x}")
+            # Standard-Einzel-Byte-Befehle (lo = Wert 1-99)
+            self._dispatch_ring_select(lo)
+            return
 
         elif cmd == 0x10 and app:
             if 0 <= lo < len(MODE_NAMES):
