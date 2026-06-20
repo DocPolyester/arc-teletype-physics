@@ -22,7 +22,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(LOG_DIR / "arc_cycles.log"),
-        logging.StreamHandler(sys.stdout),
+        # StreamHandler weggelassen: systemd leitet stdout bereits in dieselbe Datei
     ],
 )
 logger = logging.getLogger(__name__)

@@ -141,7 +141,7 @@ class ArduinoSerialHandler:
     def update_state(self, app: "ArcCyclesApp"):
         """Sendet aktuelle Ring-Werte an den Arduino (max 60 Hz)."""
         now = time.time()
-        if now - self._last_send < 0.016:
+        if now - self._last_send < 0.050:  # 20 Hz reicht, reduziert TX/RX-Kollisionen
             return
         self._last_send = now
 
