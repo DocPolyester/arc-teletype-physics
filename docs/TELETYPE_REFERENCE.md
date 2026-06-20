@@ -63,6 +63,7 @@ Aktivieren eines Multi-Ring-Modus übernimmt alle 4 Ringe. Einzel-Ring-Modi werd
 | Command | Effect |
 |---------|--------|
 | `IIS 88` | Externer Clock-Tick — Teletype takt an Pi melden |
+| `IIS 89` | Meadowphysics Reset — alle Ringe auf Startposition |
 
 ### Switch Mode — Single Ring
 
@@ -206,7 +207,9 @@ Encoder Inhalts-Ring (0/2): Mutations-Rate · Encoder Status-Ring (1/3): Loop-L�
 
 ### Meadowphysics (IIS 14)
 
-4 unabhängige Countdown-Zähler. Ring N feuert → Reset Ring N+1 (Kaskade).
+4 vollständig unabhängige Countdown-Zähler — kein Kaskaden-Reset.
+Jeder Ring feuert eigenständig wenn sein Zähler seine Periode erreicht (12 Uhr = Fire-Punkt).
+Encoder dreht den Startpunkt: links = weiter zurück (längere Periode), rechts = kürzer.
 
 | Register | Ring | State 0 (pos) | State 1 (vel) |
 |----------|------|---------------|---------------|
@@ -215,7 +218,8 @@ Encoder Inhalts-Ring (0/2): Mutations-Rate · Encoder Status-Ring (1/3): Loop-L�
 | `IIQ 49 40` | Ring 2 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
 | `IIQ 49 50` | Ring 3 | Trigger (5000 = gefeuert) | **Füllstand (0–5000)** |
 
-Encoder Turn: Periode ändern (2–32 Schritte, ~0.5–8 s bei 4 Hz) · Press: Zähler zurücksetzen
+Encoder Turn: Startpunkt / Periode einstellen (2–64 Schritte) · Press: Diesen Ring zurücksetzen  
+`IIS 89`: Alle Ringe gleichzeitig auf Startposition zurücksetzen
 
 ---
 

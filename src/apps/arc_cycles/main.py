@@ -180,6 +180,21 @@ class ArcCyclesApp:
             group.arc_offset = offset
         logger.info(f"ARC orientation: offset={offset} LEDs")
 
+    def clock_tick(self):
+        """Forward an IIS 88 external clock tick to all modes that support it."""
+        for group in self.multi_ring_groups:
+            if hasattr(group, 'on_clock_tick'):
+                group.on_clock_tick()
+        for inst in self.ring_instances:
+            if hasattr(inst, 'on_clock_tick'):
+                inst.on_clock_tick()
+
+    def meadowphysics_reset(self):
+        """IIS 89 — reset all Meadowphysics rings to start position."""
+        for group in self.multi_ring_groups:
+            if hasattr(group, 'reset_all'):
+                group.reset_all()
+
     # ------------------------------------------------------------------ #
     #  Main loop                                                           #
     # ------------------------------------------------------------------ #
@@ -286,17 +301,20 @@ class ArcCyclesApp:
     def start(self):
         self.running = True
         logger.info("Arc Cycles App started")
-        _target = 1.0 / 60.0
+        _target     = 1.0 / 25.0
+        next_frame  = time.perf_counter()
         try:
             while self.running:
-                t0 = time.perf_counter()
                 try:
                     self.update()
                 except Exception as e:
                     logger.error(f"Frame error: {e}", exc_info=True)
-                remaining = _target - (time.perf_counter() - t0)
+                next_frame += _target
+                remaining   = next_frame - time.perf_counter()
                 if remaining > 0.001:
                     time.sleep(remaining)
+                elif remaining < -_target:
+                    next_frame = time.perf_counter()   # zu weit hinter, neu synchronisieren
         except KeyboardInterrupt:
             logger.info("Interrupted")
         finally:

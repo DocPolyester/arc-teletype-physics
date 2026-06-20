@@ -57,6 +57,8 @@ import threading
 import time
 from typing import Optional, TYPE_CHECKING
 
+import queue as _queue
+
 if TYPE_CHECKING:
     from apps.arc_cycles.main import ArcCyclesApp
 
@@ -106,6 +108,11 @@ class ArduinoSerialHandler:
         self._pending_hi:  Optional[int] = None
         self._last_send   = 0.0
 
+        # TX: main thread deposits latest state here, serial thread sends it
+        self._tx_queue: _queue.Queue = _queue.Queue(maxsize=1)
+        self._chk_err_count = 0
+        self._chk_err_logged = 0.0
+
     def set_app(self, app: "ArcCyclesApp"):
         self._app = app
 
@@ -139,17 +146,22 @@ class ArduinoSerialHandler:
     # ------------------------------------------------------------------ #
 
     def update_state(self, app: "ArcCyclesApp"):
-        """Sendet aktuelle Ring-Werte an den Arduino (max 60 Hz)."""
+        """Queues latest state for the serial thread to send — never blocks."""
         now = time.time()
-        if now - self._last_send < 0.050:  # 20 Hz reicht, reduziert TX/RX-Kollisionen
+        if now - self._last_send < 0.050:
             return
         self._last_send = now
-
         if not (self._ser and self._ser.is_open):
             return
-
         tx = self._build_tx(app)
-        self._send_packet(tx)
+        try:
+            self._tx_queue.get_nowait()   # discard stale
+        except _queue.Empty:
+            pass
+        try:
+            self._tx_queue.put_nowait(tx)
+        except _queue.Full:
+            pass
 
     def _build_tx(self, app: "ArcCyclesApp") -> bytes:
         """32-Byte TX-Puffer: 4 Ringe × 4 Zustände als int16 big-endian.
@@ -178,53 +190,72 @@ class ArduinoSerialHandler:
     # ------------------------------------------------------------------ #
 
     def _rx_loop(self):
-        """Liest Teletype-Befehle die der Arduino per 0xBB-Protokoll schickt."""
+        """Serial thread: handles RX and sends TX — sole owner of self._ser."""
         state   = "IDLE"
         cmd_len = 0
         cmd_buf: list[int] = []
+        last_tx = 0.0
 
         while self._running:
             try:
                 if not (self._ser and self._ser.is_open):
                     time.sleep(0.1)
                     continue
-                raw = self._ser.read(1)
-                if not raw:
+
+                # TX: send queued state at 20 Hz from this thread only
+                now = time.time()
+                if now - last_tx >= 0.050:
+                    try:
+                        tx = self._tx_queue.get_nowait()
+                        self._send_packet(tx)
+                    except _queue.Empty:
+                        pass
+                    last_tx = now
+
+                available = self._ser.in_waiting
+                if not available:
+                    time.sleep(0.002)
                     continue
-                b = raw[0]
+                raw = self._ser.read(available)
 
-                if state == "IDLE":
-                    if b == RX_HEADER:
-                        state = "LEN"
-                    elif b in (0x54, 0x45):  # 'T' oder 'E' = startup-Text
-                        state = "TEXT"
+                for b in raw:
+                    if state == "IDLE":
+                        if b == RX_HEADER:
+                            state = "LEN"
+                        elif b in (0x54, 0x45):  # 'T' oder 'E' = startup-Text
+                            state = "TEXT"
 
-                elif state == "TEXT":
-                    if b == 0x0A:
+                    elif state == "TEXT":
+                        if b == 0x0A:
+                            state = "IDLE"
+
+                    elif state == "LEN":
+                        cmd_len = b
+                        cmd_buf = []
+                        if cmd_len == 0:
+                            state = "IDLE"
+                        else:
+                            state = "DATA"
+
+                    elif state == "DATA":
+                        cmd_buf.append(b)
+                        if len(cmd_buf) == cmd_len:
+                            state = "CHK"
+
+                    elif state == "CHK":
+                        chk = cmd_len
+                        for x in cmd_buf:
+                            chk ^= x
+                        if chk == b:
+                            self._handle_rx(bytes(cmd_buf))
+                        else:
+                            self._chk_err_count += 1
+                            now = time.time()
+                            if now - self._chk_err_logged >= 1.0:
+                                logger.warning(f"RX Checksum-Fehler ×{self._chk_err_count}")
+                                self._chk_err_count = 0
+                                self._chk_err_logged = now
                         state = "IDLE"
-
-                elif state == "LEN":
-                    cmd_len = b
-                    cmd_buf = []
-                    if cmd_len == 0:
-                        state = "IDLE"
-                    else:
-                        state = "DATA"
-
-                elif state == "DATA":
-                    cmd_buf.append(b)
-                    if len(cmd_buf) == cmd_len:
-                        state = "CHK"
-
-                elif state == "CHK":
-                    chk = cmd_len
-                    for x in cmd_buf:
-                        chk ^= x
-                    if chk == b:
-                        self._handle_rx(bytes(cmd_buf))
-                    else:
-                        logger.warning("RX Checksum-Fehler")
-                    state = "IDLE"
 
             except serial.SerialException as e:
                 logger.error(f"RX loop serial error: {e}")
@@ -272,6 +303,12 @@ class ArduinoSerialHandler:
             logger.debug("IIS 15: reserviert")
         elif cmd == 88:
             logger.debug("IIS 88: Clock Tick")
+            if self._app:
+                self._app.clock_tick()
+        elif cmd == 89:
+            logger.info("IIS 89: Meadowphysics Reset")
+            if self._app:
+                self._app.meadowphysics_reset()
         # ── Per-ring mode switch: IIS 101–171 ────────────────────────────
         # Formel: ring = (cmd-101)//20,  mode = (cmd-101)%20 + 1
         # Ring 1: 101–111  Ring 2: 121–131  Ring 3: 141–151  Ring 4: 161–171
