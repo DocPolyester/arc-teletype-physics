@@ -56,14 +56,17 @@ class EuclideanMode(ArcMode):
         self._patterns      = [_bjorklund(self.n[i], self.k[i]) for i in range(num_rings)]
         self._head          = [0]   * num_rings  # current step (int)
         self._head_frac     = [0.0] * num_rings  # fractional accumulator
-        self._triggered     = [False] * num_rings  # True for one frame on beat hit
-        self._flash         = [0.0]  * num_rings   # seconds remaining in trigger flash
+        self._triggered      = [False] * num_rings
+        self._trigger_hold   = [0]    * num_rings   # latch: keep triggered=True for N frames
+        self._flash          = [0.0]  * num_rings
 
     # ------------------------------------------------------------------ #
 
     def update(self, dt: float = 0.016):
         for i in range(self.num_rings):
-            self._triggered[i] = False
+            if self._trigger_hold[i] > 0:
+                self._trigger_hold[i] -= 1
+            self._triggered[i] = self._trigger_hold[i] > 0
             if self._flash[i] > 0:
                 self._flash[i] -= dt
 
@@ -72,6 +75,7 @@ class EuclideanMode(ArcMode):
                 self._head_frac[i] -= 1.0
                 self._head[i] = (self._head[i] + 1) % self.n[i]
                 if self._patterns[i][self._head[i]]:
+                    self._trigger_hold[i] = 4
                     self._triggered[i] = True
                     self._flash[i] = 0.08
 

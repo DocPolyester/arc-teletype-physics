@@ -50,6 +50,7 @@ IIQ-Abfragen (Teletype schreibt Register, liest 2 Bytes int16):
 
 import logging
 import math
+import select as _select
 import serial
 import struct
 import subprocess
@@ -107,6 +108,7 @@ class ArduinoSerialHandler:
         self._pending_cmd: Optional[int] = None
         self._pending_hi:  Optional[int] = None
         self._last_send   = 0.0
+        self._last_iis88  = 0.0   # debounce: suppress duplicate IIS 88 within 5ms
 
         # TX: main thread deposits latest state here, serial thread sends it
         self._tx_queue: _queue.Queue = _queue.Queue(maxsize=1)
@@ -148,7 +150,7 @@ class ArduinoSerialHandler:
     def update_state(self, app: "ArcCyclesApp"):
         """Queues latest state for the serial thread to send — never blocks."""
         now = time.time()
-        if now - self._last_send < 0.050:
+        if now - self._last_send < 0.025:   # 40 Hz instead of 20 Hz for better M50 reliability
             return
         self._last_send = now
         if not (self._ser and self._ser.is_open):
@@ -191,10 +193,11 @@ class ArduinoSerialHandler:
 
     def _rx_loop(self):
         """Serial thread: handles RX and sends TX — sole owner of self._ser."""
-        state   = "IDLE"
-        cmd_len = 0
+        state            = "IDLE"
+        cmd_len          = 0
         cmd_buf: list[int] = []
-        last_tx = 0.0
+        last_tx          = 0.0
+        consec_errors    = 0       # Backoff bei dauerhaftem Checksum-Fehler-Flood
 
         while self._running:
             try:
@@ -202,9 +205,9 @@ class ArduinoSerialHandler:
                     time.sleep(0.1)
                     continue
 
-                # TX: send queued state at 20 Hz from this thread only
+                # TX: send queued state at 40 Hz from this thread only
                 now = time.time()
-                if now - last_tx >= 0.050:
+                if now - last_tx >= 0.025:
                     try:
                         tx = self._tx_queue.get_nowait()
                         self._send_packet(tx)
@@ -212,11 +215,20 @@ class ArduinoSerialHandler:
                         pass
                     last_tx = now
 
+                # select() statt sleep(): wacht sofort auf wenn Daten ankommen
+                # → IIS 88 Latenz von ≤10ms auf <1ms reduziert
+                wait = 0.050 if consec_errors > 20 else 0.010
+                try:
+                    readable, _, _ = _select.select([self._ser], [], [], wait)
+                except (ValueError, OSError):
+                    break
+                if not readable:
+                    continue
+
                 available = self._ser.in_waiting
                 if not available:
-                    time.sleep(0.002)
                     continue
-                raw = self._ser.read(available)
+                raw = self._ser.read(min(available, 256))
 
                 for b in raw:
                     if state == "IDLE":
@@ -248,7 +260,9 @@ class ArduinoSerialHandler:
                             chk ^= x
                         if chk == b:
                             self._handle_rx(bytes(cmd_buf))
+                            consec_errors = 0
                         else:
+                            consec_errors += 1
                             self._chk_err_count += 1
                             now = time.time()
                             if now - self._chk_err_logged >= 1.0:
@@ -299,12 +313,23 @@ class ArduinoSerialHandler:
             if self._app:
                 self._app.activate_multi_mode("meadowphysics", [[0, 1, 2, 3]])
                 logger.info("IIS 14: Meadowphysics aktiviert (Ringe 0–3)")
-        elif cmd == 15:
-            logger.debug("IIS 15: reserviert")
         elif cmd == 88:
-            logger.debug("IIS 88: Clock Tick")
             if self._app:
-                self._app.clock_tick()
+                now = time.time()
+                if now - self._last_iis88 < 0.005:
+                    # Duplicate IIS 88 within 5ms — spurious echo or serial noise, ignore
+                    return
+                self._last_iis88 = now
+                self._app.clock_tick()      # clears _fired, advances counts, fires rings, sets _tick_event
+                # Send fired state immediately in this thread — no 30-50ms main-thread round-trip.
+                # Clears stale queued state first so _rx_loop won't overwrite us.
+                try:
+                    self._tx_queue.get_nowait()
+                except _queue.Empty:
+                    pass
+                tx = self._build_tx(self._app)
+                self._send_packet(tx)
+                self._last_send = time.time()  # suppress update_state() for 25ms
         elif cmd == 89:
             logger.info("IIS 89: Meadowphysics Reset")
             if self._app:
@@ -447,8 +472,7 @@ class ArduinoSerialHandler:
                 if name == "swing":
                     app.ring_instances[r].teletype_command("RESET")
 
-        else:
-            logger.debug(f"Unbekannter Befehl hi=0x{hi:02x} lo=0x{lo:02x}")
+        # else: unbekannter Befehl, ignorieren
 
     def _dispatch_second_byte(self, hi: int, lo: int):
         cmd      = self._pending_cmd

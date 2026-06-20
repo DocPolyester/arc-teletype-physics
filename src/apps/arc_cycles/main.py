@@ -4,6 +4,7 @@ Arc Cycles Application - Main controller with per-ring mode management
 import logging
 import queue
 import subprocess
+import threading
 import time
 from typing import Dict, List, Optional
 
@@ -85,6 +86,7 @@ class ArcCyclesApp:
         self.last_update = time.time()
         self._encoder_queue: queue.Queue = queue.Queue()
         self._shutdown_press_time: float = 0.0
+        self._tick_event: threading.Event = threading.Event()
 
         if self.i2c_slave:
             self.i2c_slave.set_app(self)
@@ -188,6 +190,7 @@ class ArcCyclesApp:
         for inst in self.ring_instances:
             if hasattr(inst, 'on_clock_tick'):
                 inst.on_clock_tick()
+        self._tick_event.set()  # wake main loop immediately instead of waiting for next frame
 
     def meadowphysics_reset(self):
         """IIS 89 — reset all Meadowphysics rings to start position."""
@@ -311,8 +314,10 @@ class ArcCyclesApp:
                     logger.error(f"Frame error: {e}", exc_info=True)
                 next_frame += _target
                 remaining   = next_frame - time.perf_counter()
-                if remaining > 0.001:
-                    time.sleep(remaining)
+                if remaining > 0.002:
+                    # Wake immediately if a clock tick fires, otherwise wait for next frame
+                    self._tick_event.wait(timeout=remaining - 0.001)
+                    self._tick_event.clear()
                 elif remaining < -_target:
                     next_frame = time.perf_counter()   # zu weit hinter, neu synchronisieren
         except KeyboardInterrupt:

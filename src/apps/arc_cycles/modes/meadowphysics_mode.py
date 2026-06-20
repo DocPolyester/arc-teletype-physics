@@ -8,9 +8,9 @@ Kein Kaskaden-Reset — alle Ringe sind vollständig unabhängig.
 Reset aller Ringe: IIS 89
 
 Display (Normal):
-  Heller Punkt + Trail  = aktuelle Position (sub-tick interpoliert)
-  Heller Blitz          = Ring hat gefeuert
-  Pip bei LED 0         = Fire-Punkt (12 Uhr)
+  Heller Punkt   = aktuelle Position
+  Heller Blitz   = Ring hat gefeuert
+  Pip bei LED 0  = Fire-Punkt (12 Uhr)
 
 Display (Edit, 1.5 s nach Encoder-Drehung):
   Gefüllter Bogen       = Sektor von Startpunkt bis LED 0
@@ -30,7 +30,6 @@ _CLOCK_RATE     = 4.0
 _MIN_PERIOD     = 2
 _MAX_PERIOD     = 64
 _FLASH_DUR      = 0.30
-_TRAIL_LEN      = 5
 _ENC_DIV        = 3
 _EDIT_DUR       = 1.5    # Sekunden Step-Grid-Anzeige nach Encoder-Drehung
 _DEFAULTS       = [32, 16, 8, 4]
@@ -46,16 +45,28 @@ class MeadowphysicsMode(MultiRingMode):
         self._flash         = [0.0] * n
         self._edit_timer    = [0.0] * n
         self._fired         = [False] * n
-        self._fired_hold    = [0] * n
+        self._fired_until   = [0.0] * n   # absolute time when fired state expires
         self._acc           = 0.0
         self._use_int_clk   = True
         self._enc_acc       = [0] * n
-        self._last_tick     = time.time()   # für sub-tick Interpolation
+        self._last_tick     = time.time()
+        self._tick_interval = 1.0 / _CLOCK_RATE  # seconds per tick; updated from IIS 88 timing
+        self._last_tick_t   = 0.0
 
     # ------------------------------------------------------------------ #
 
     def on_clock_tick(self):
+        now = time.time()
+        if self._last_tick_t > 0:
+            interval = now - self._last_tick_t
+            if 0.005 < interval < 5.0:
+                self._tick_interval = interval
+        self._last_tick_t = now
         self._use_int_clk = False
+        # Clear fired from previous tick before advancing — prevents bleed-over
+        # into the next Teletype METRO cycle (fired is managed per-tick, not time-based)
+        for i in range(len(self.rings)):
+            self._fired[i] = False
         self._do_step()
 
     def _do_step(self):
@@ -66,25 +77,30 @@ class MeadowphysicsMode(MultiRingMode):
                 self._fire(i)
 
     def _fire(self, i: int):
-        self._fired_hold[i] = 4
-        self._fired[i]      = True
-        self._flash[i]      = _FLASH_DUR
-        self._count[i]      = 0
+        self._fired[i]       = True
+        self._fired_until[i] = time.time() + self._tick_interval  # used only in int-clk mode
+        self._flash[i]       = _FLASH_DUR
+        self._count[i]       = 0
 
     def reset_all(self):
         """IIS 89 — alle Ringe auf Startposition zurücksetzen."""
         for i in range(len(self.rings)):
-            self._count[i]      = 0
-            self._flash[i]      = 0.0
-            self._edit_timer[i] = 0.0
-            self._fired[i]      = False
-            self._fired_hold[i] = 0
+            self._count[i]       = 0
+            self._flash[i]       = 0.0
+            self._edit_timer[i]  = 0.0
+            self._fired[i]       = False
+            self._fired_until[i] = 0.0
 
     def update(self, dt: float):
+        now = time.time()
         for i in range(len(self.rings)):
-            if self._fired_hold[i] > 0:
-                self._fired_hold[i] -= 1
-            self._fired[i] = self._fired_hold[i] > 0
+            if self._use_int_clk:
+                self._fired[i] = now < self._fired_until[i]
+            elif self._fired[i] and now > self._fired_until[i]:
+                # Fallback: auto-clear if next IIS 88 never arrived (lost tick).
+                # _fired_until is set to now+tick_interval in _fire(), so this
+                # triggers after one full tick period without a new on_clock_tick().
+                self._fired[i] = False
             if self._flash[i]      > 0: self._flash[i]      = max(0.0, self._flash[i]      - dt)
             if self._edit_timer[i] > 0: self._edit_timer[i] = max(0.0, self._edit_timer[i] - dt)
 
@@ -97,42 +113,30 @@ class MeadowphysicsMode(MultiRingMode):
     # ------------------------------------------------------------------ #
 
     def display(self):
-        now      = time.time()
-        # Fraction elapsed since last tick (0..1) — used for smooth interpolation
-        tick_frac = min(1.0, (now - self._last_tick) * _CLOCK_RATE)
-
         for i, ring in enumerate(self.rings):
             leds   = [1] * 64
             period = self._period[i]
             count  = self._count[i]
 
             if self._flash[i] > 0:
-                # Heller Self-Fire-Blitz (fade)
                 fade = max(1, int(15 * self._flash[i] / _FLASH_DUR))
                 leds = [fade] * 64
 
             elif self._edit_timer[i] > 0:
-                # ── Sektor-Modus ─────────────────────────────────────────
-                # Bogen von Startpunkt (64-period) bis LED 63, feuert bei LED 0
                 start = (64 - period) % 64
                 for step in range(period):
                     leds[(start + step) % 64] = 7
-                leds[0]     = 13        # Fire-Punkt (12 Uhr)
-                leds[start] = 11        # Loslaufpunkt
+                leds[0]     = 13
+                leds[start] = 11
                 leds[(start + min(count, period - 1)) % 64] = 15
 
             else:
-                # ── Normal-Modus ──────────────────────────────────────────
-                # Dot läuft von (64-period) bis 63, feuert bei LED 0
                 start = (64 - period) % 64
-                smooth_count = count + tick_frac
-                pos = int(start + smooth_count) % 64
-                for t in range(_TRAIL_LEN, 0, -1):
-                    leds[(pos - t) % 64] = max(leds[(pos - t) % 64], t + 1)
+                pos   = (start + count) % 64
                 leds[pos] = 15
-                leds[0]   = max(leds[0], 4)   # Fire-Punkt immer sichtbar
+                leds[0]   = max(leds[0], 4)
 
-            self._send_ring(ring, leds)
+            self.arc.set_ring_map(ring, leds)
 
     # ------------------------------------------------------------------ #
 
@@ -147,10 +151,9 @@ class MeadowphysicsMode(MultiRingMode):
 
     def on_encoder_press(self, ring: int):
         i = self.rings.index(ring)
-        self._count[i]         = 0
-        self._flash[i]         = 0.0
-        self._cascade_flash[i] = 0.0
-        self._edit_timer[i]    = 0.0
+        self._count[i]      = 0
+        self._flash[i]      = 0.0
+        self._edit_timer[i] = 0.0
 
     def get_iiq_value(self, ring: int, vtype: int) -> int:
         if ring not in self.rings:

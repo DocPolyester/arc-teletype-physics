@@ -28,14 +28,17 @@ class BounceMode(ArcMode):
 
         self.position = [float(FLOOR)] * num_rings
         self.velocity = [_INIT_VEL_ALL[(ring_hint + i) % 4] for i in range(num_rings)]
-        self._bounced = [False] * num_rings
-        self._flash   = [0.0]  * num_rings
+        self._bounced      = [False] * num_rings
+        self._bounce_hold  = [0]    * num_rings   # latch: keep bounced=True for N frames
+        self._flash        = [0.0]  * num_rings
 
     # ------------------------------------------------------------------ #
 
     def update(self, dt: float = 0.016):
         for i in range(self.num_rings):
-            self._bounced[i] = False
+            if self._bounce_hold[i] > 0:
+                self._bounce_hold[i] -= 1
+            self._bounced[i] = self._bounce_hold[i] > 0
             if self._flash[i] > 0:
                 self._flash[i] -= dt
 
@@ -47,6 +50,7 @@ class BounceMode(ArcMode):
                 self.velocity[i] = abs(self.velocity[i]) * ELASTICITY
                 if self.velocity[i] < 0.5:
                     self.velocity[i] = 0.0
+                self._bounce_hold[i] = 4
                 self._bounced[i] = True
                 self._flash[i]   = 0.06
 
@@ -62,7 +66,8 @@ class BounceMode(ArcMode):
         if 0 <= ring < self.num_rings:
             self.position[ring] = float(FLOOR)
             self.velocity[ring] = _INIT_VEL_ALL[ring % 4]
-            self._bounced[ring] = False
+            self._bounced[ring]     = False
+            self._bounce_hold[ring] = 0
 
     def get_ring_display(self, ring: int) -> List[Tuple[int, int]]:
         pos   = int(round(self.position[ring])) % 64

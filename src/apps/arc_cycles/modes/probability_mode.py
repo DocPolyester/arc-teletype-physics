@@ -26,16 +26,19 @@ class ProbabilityMode(ArcMode):
         # Different starting probabilities per ring for variety
         _starts = [0.5, 0.25, 0.75, 0.33]
         self.probability = [_starts[(ring_hint + i) % 4] for i in range(num_rings)]
-        self._clock_acc  = [0.0]   * num_rings
+        self._clock_acc  = [0.0] * num_rings
         self._fired      = [False] * num_rings
-        self._flash      = [0.0]   * num_rings
+        self._fired_hold = [0]   * num_rings   # latch: keep fired=True for N frames
+        self._flash      = [0.0] * num_rings
 
     # ------------------------------------------------------------------ #
 
     def update(self, dt: float = 0.016):
         interval = 1.0 / GATE_RATE
         for i in range(self.num_rings):
-            self._fired[i] = False
+            if self._fired_hold[i] > 0:
+                self._fired_hold[i] -= 1
+            self._fired[i] = self._fired_hold[i] > 0
             if self._flash[i] > 0:
                 self._flash[i] -= dt
 
@@ -43,6 +46,7 @@ class ProbabilityMode(ArcMode):
             if self._clock_acc[i] >= interval:
                 self._clock_acc[i] -= interval
                 if random.random() < self.probability[i]:
+                    self._fired_hold[i] = 4
                     self._fired[i] = True
                     self._flash[i] = FLASH_DURATION
 

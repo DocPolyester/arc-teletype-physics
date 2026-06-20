@@ -24,6 +24,24 @@ def _build_ring_map_header(prefix: str) -> bytes:
     return addr + tag
 
 
+def _build_ring_set_header(prefix: str) -> bytes:
+    """Pre-build the static OSC header for /prefix/ring/set (3 int32 args: ring, pos, val)."""
+    addr = f"{prefix}/ring/set".encode() + b"\x00"
+    addr += b"\x00" * ((4 - len(addr) % 4) % 4)
+    tag = b",iii\x00"
+    tag += b"\x00" * ((4 - len(tag) % 4) % 4)
+    return addr + tag
+
+
+def _build_ring_all_header(prefix: str) -> bytes:
+    """Pre-build the static OSC header for /prefix/ring/all (2 int32 args: ring, val)."""
+    addr = f"{prefix}/ring/all".encode() + b"\x00"
+    addr += b"\x00" * ((4 - len(addr) % 4) % 4)
+    tag = b",ii\x00"
+    tag += b"\x00" * ((4 - len(tag) % 4) % 4)
+    return addr + tag
+
+
 def discover_arc(host: str = "127.0.0.1", timeout: float = 2.0):
     """
     Query serialoscd on port 12002 to discover the Arc device.
@@ -93,8 +111,9 @@ class ArcController:
 
         self.client = udp_client.SimpleUDPClient(host, self.port)
 
-        # Fast raw UDP sender for ring/map
+        # Fast raw UDP sender for ring/map — non-blocking so a full kernel buffer never stalls
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setblocking(False)
         self._dest = (host, self.port)
 
         # Pre-allocate one packet buffer per ring (header baked in, ring index fixed)
@@ -106,6 +125,23 @@ class ArcController:
             buf[:self._hlen] = header
             struct.pack_into(">i", buf, self._hlen, ring)
             self._ring_bufs.append(buf)
+
+        # Pre-allocate ring/set packet buffer (shared, reused per individual LED update)
+        # Packet: header + 3×int32 (ring, pos, val) = 40 bytes total
+        rs_header = _build_ring_set_header(prefix)
+        self._rs_hlen = len(rs_header)
+        self._rs_buf = bytearray(self._rs_hlen + 12)
+        self._rs_buf[:self._rs_hlen] = rs_header
+
+        # Pre-allocate ring/all packet buffer (ring, val) = 32 bytes total
+        # Used when all 64 LEDs have the same value (flash animation) — 10× less serial data
+        ra_header = _build_ring_all_header(prefix)
+        self._ra_hlen = len(ra_header)
+        self._ra_buf = bytearray(self._ra_hlen + 8)
+        self._ra_buf[:self._ra_hlen] = ra_header
+
+        # Display cache: only send UDP if LED data actually changed
+        self._led_cache: List[bytes] = [bytes(64)] * 4
 
         self._server: Optional[osc_server.BlockingOSCUDPServer] = None
         self._server_thread: Optional[threading.Thread] = None
@@ -121,12 +157,72 @@ class ArcController:
         self.client.send_message(f"{self.prefix}/ring/all", [ring, brightness])
 
     def set_ring_map(self, ring: int, levels):
-        """Set all 64 LEDs on a ring atomically — fast raw UDP, no temp allocations."""
-        buf = self._ring_bufs[ring]
-        offset = self._hlen + 4
-        buf[offset:offset + 256] = _ZEROS_256        # zero all level bytes (C-level memcpy)
-        buf[offset + 3::4] = bytes(levels)           # set LSB of each int32 (0-15 fits in 1 byte)
-        self._sock.sendto(buf, self._dest)
+        """Set all 64 LEDs on a ring.
+
+        Uses ring/set for small changes (≤8 LEDs) — each ring/set is 40 bytes vs 348 bytes
+        for ring/map. At 115200 baud to the Arc this reduces serial latency from ~30 ms per
+        ring to ~3.5 ms per changed LED, so all 4 rings appear updated within ~28 ms instead
+        of ~120 ms when only the dot position changes.
+        """
+        new = bytes(levels)
+        if new == self._led_cache[ring]:
+            return
+        old = self._led_cache[ring]
+        self._led_cache[ring] = new
+
+        # Fast path: all 64 LEDs same brightness (flash) → ring/all (32 bytes vs 348 for ring/map)
+        first = new[0]
+        if new == bytes([first] * 64):
+            struct.pack_into(">ii", self._ra_buf, self._ra_hlen, ring, int(first))
+            try:
+                self._sock.sendto(self._ra_buf, self._dest)
+            except BlockingIOError:
+                pass
+            return
+
+        # Transition from uniform state (e.g. flash→normal): ring/all(bg) + ring/set patches
+        # avoids a full ring/map (348 bytes) when dt jitter causes the flash to skip the
+        # fade=1 frame and jump directly from [2]*64 or [3]*64 to the normal dot display.
+        if old == bytes([old[0]] * 64):
+            bg = min(new)
+            patches = [(i, new[i]) for i in range(64) if new[i] != bg]
+            if len(patches) <= 8:
+                struct.pack_into(">ii", self._ra_buf, self._ra_hlen, ring, int(bg))
+                try:
+                    self._sock.sendto(self._ra_buf, self._dest)
+                except BlockingIOError:
+                    pass
+                buf = self._rs_buf
+                h = self._rs_hlen
+                for pos, val in patches:
+                    struct.pack_into(">iii", buf, h, ring, pos, int(val))
+                    try:
+                        self._sock.sendto(buf, self._dest)
+                    except BlockingIOError:
+                        pass
+                return
+
+        changes = [(i, new[i]) for i in range(64) if old[i] != new[i]]
+        if len(changes) <= 8:
+            # Incremental ring/set: far less serial data for typical dot movement (2-3 LEDs)
+            buf = self._rs_buf
+            h = self._rs_hlen
+            for pos, val in changes:
+                struct.pack_into(">iii", buf, h, ring, pos, int(val))
+                try:
+                    self._sock.sendto(buf, self._dest)
+                except BlockingIOError:
+                    pass
+        else:
+            # Full ring/map for large changes (edit sector, mode switch)
+            buf = self._ring_bufs[ring]
+            offset = self._hlen + 4
+            buf[offset:offset + 256] = _ZEROS_256
+            buf[offset + 3::4] = new
+            try:
+                self._sock.sendto(buf, self._dest)
+            except BlockingIOError:
+                pass
 
     def clear_ring(self, ring: int):
         self.set_ring_all(ring, 0)

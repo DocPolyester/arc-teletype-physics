@@ -1,29 +1,28 @@
 /*
- * teletype_bridge.ino  v2.0
+ * teletype_bridge.ino  v2.1
  *
- * IIQ-Kommando-Schema (1 Byte, 0-255):
- *   cmd 20..23  → Ring 0, Zustand (cmd - 20)
- *   cmd 30..33  → Ring 1, Zustand (cmd - 30)
- *   cmd 40..43  → Ring 2, Zustand (cmd - 40)
- *   cmd 50..53  → Ring 3, Zustand (cmd - 50)
- *   Formel: ring = (cmd / 10) - 2,  state = cmd % 10
+ * Fixes vs v2.0:
+ *   - IIQ queries (cmd 20-53) no longer occupy the forward-queue.
+ *     They only update req_ring/req_state for onRequest(). RPi doesn't need them.
+ *     In v2.0 an IIQ would set tel_cmd.ready=true, silently dropping the next
+ *     IIS (e.g. IIS 88) if loop() hadn't cleared it yet.
+ *   - IIS commands use a 4-entry circular queue so back-to-back IIS commands
+ *     (e.g. IIS 14 followed immediately by IIS 88) are never dropped.
+ *   - Serial.write uses a single buffer call per packet (less latency).
  *
- * Zustände (state = cmd % 10):
- *   0 = Position   (0..63, Arc-Position)
- *   1 = Velocity   (Geschwindigkeit × 100)
- *   2 = Angle      (Winkel × 10, Grad)
- *   3 = Param1     (modusspezifisch)
+ * IIQ schema (register byte, 0-255):
+ *   20-23 → Ring 0, state 0-3
+ *   30-33 → Ring 1, state 0-3
+ *   40-43 → Ring 2, state 0-3
+ *   50-53 → Ring 3, state 0-3
+ *   Formula: ring = (cmd/10)-2, state = cmd%10
  *
- * Hinweis: IIS 10-15 sind für Modus-Befehle reserviert (Chaos, Probability,
- * Phase Shift, Turing Machine, Meadowphysics). Deshalb startet IIQ bei 20.
+ * Serial RPi→Arduino (34 bytes):
+ *   [0xAA] [32 bytes data] [XOR checksum]
+ *   Data: ring_vals[0][0..3], ring_vals[1][0..3], ... (int16 big-endian)
  *
- * Serial RPi → Arduino (34 Bytes):
- *   [0xAA] [32 Bytes Daten] [XOR-Checksum]
- *   Daten: Ring0-Zust0..3, Ring1-Zust0..3, Ring2-Zust0..3, Ring3-Zust0..3
- *   Je Wert: 2 Bytes big-endian int16
- *
- * Serial Arduino → RPi (N+3 Bytes):
- *   [0xBB] [N] [data0..dataN-1] [XOR-Checksum]
+ * Serial Arduino→RPi (N+3 bytes):
+ *   [0xBB] [N] [data0..dataN-1] [XOR checksum]
  */
 
 #include <Wire.h>
@@ -31,51 +30,71 @@
 const uint8_t  I2C_ADDR  = 0x31;
 const uint32_t BAUD      = 115200;
 const uint8_t  N_RINGS   = 4;
-const uint8_t  N_STATES  = 4;   // 0=pos 1=vel 2=angle 3=param1
+const uint8_t  N_STATES  = 4;
 
 volatile int16_t ring_vals[N_RINGS][N_STATES];
 
 volatile uint8_t req_ring  = 0;
 volatile uint8_t req_state = 0;
 
-struct TelCmd {
-    uint8_t data[32];
-    uint8_t len;
-    bool    ready;
-};
-volatile TelCmd tel_cmd = {{0}, 0, false};
+// ---- IIS command queue (ISR writes, loop() reads) -------------------------
+// 4-entry circular buffer — power of 2 for cheap masking.
+// ISR modifies cmd_tail only; loop() modifies cmd_head only → no locking needed.
 
-// 32 Datenbytes + 1 Checksum-Byte
+#define CMD_Q     4
+#define CMD_Q_MSK (CMD_Q - 1)
+
+struct CmdEntry {
+    uint8_t data[4];
+    uint8_t len;
+};
+
+volatile CmdEntry cmd_buf[CMD_Q];
+volatile uint8_t  cmd_tail = 0;   // ISR: next write slot
+         uint8_t  cmd_head = 0;   // loop(): next read slot (non-volatile: only loop() touches it)
+
+// ---- Serial RX state machine ----------------------------------------------
 uint8_t ser_buf[33];
 int     ser_pos = 0;
 
-// ---- Wire-Callbacks -------------------------------------------------------
+// ---- Wire callbacks -------------------------------------------------------
 
-void onReceive(int numBytes) {
-    if (!tel_cmd.ready) {
-        tel_cmd.len = 0;
-        while (Wire.available()) {
-            uint8_t b = Wire.read();
-            if (tel_cmd.len < (uint8_t)sizeof(tel_cmd.data))
-                tel_cmd.data[tel_cmd.len++] = b;
-        }
-        if (tel_cmd.len > 0) {
-            uint8_t cmd = tel_cmd.data[0];
-            if (cmd >= 20 && cmd <= 53) {
-                req_ring  = (cmd / 10) - 2;   // 20→0, 30→1, 40→2, 50→3
-                req_state = cmd % 10;
-                if (req_state >= N_STATES) req_state = 0;
-            }
-            tel_cmd.ready = true;
-        }
+void onReceive(int /*numBytes*/) {
+    uint8_t bytes[4];
+    uint8_t n = 0;
+    while (Wire.available()) {
+        uint8_t b = Wire.read();
+        if (n < 4) bytes[n] = b;
+        n++;
+    }
+    if (n == 0) return;
+
+    uint8_t cmd = bytes[0];
+
+    if (cmd >= 20 && cmd <= 53) {
+        // IIQ register: update req_ring/req_state for onRequest().
+        // Do NOT forward to RPi — RPi ignores these anyway.
+        req_ring  = (uint8_t)((cmd / 10) - 2);
+        req_state = cmd % 10;
+        if (req_state >= N_STATES) req_state = 0;
     } else {
-        while (Wire.available()) Wire.read();
+        // IIS command: enqueue for forwarding to RPi.
+        uint8_t next = (cmd_tail + 1) & CMD_Q_MSK;
+        if (next != cmd_head) {          // queue not full
+            uint8_t slot = cmd_tail;
+            for (uint8_t i = 0; i < n && i < 4; i++)
+                cmd_buf[slot].data[i] = bytes[i];
+            cmd_buf[slot].len = (n <= 4) ? n : 4;
+            cmd_tail = next;             // publish entry (8-bit write = atomic on AVR)
+        }
+        // if queue full: command dropped, but this requires 4 back-to-back IIS
+        // commands before loop() runs — extremely unlikely at any realistic tempo.
     }
 }
 
 void onRequest() {
     uint8_t r   = req_ring  & 0x03;
-    uint8_t s   = req_state < N_STATES ? req_state : 0;
+    uint8_t s   = (req_state < N_STATES) ? req_state : 0;
     int16_t val = ring_vals[r][s];
     Wire.write((uint8_t)(val >> 8));
     Wire.write((uint8_t)(val & 0xFF));
@@ -90,28 +109,32 @@ void setup() {
     Wire.onRequest(onRequest);
     Serial.begin(BAUD);
     delay(100);
-    Serial.print("TELETYPE_BRIDGE v2.0 addr=0x");
+    Serial.print("TELETYPE_BRIDGE v2.1 addr=0x");
     Serial.println(I2C_ADDR, HEX);
 }
 
 // ---- Main Loop -----------------------------------------------------------
 
 void loop() {
-    // 1) Teletype-Befehl → RPi weiterleiten
-    if (tel_cmd.ready) {
-        uint8_t n   = tel_cmd.len;
+    // 1) Forward queued IIS commands to RPi via Serial
+    while (cmd_head != cmd_tail) {
+        uint8_t n = cmd_buf[cmd_head].len;
+        uint8_t pkt[7];          // BB + len + up to 4 data bytes + chk
+        pkt[0] = 0xBB;
+        pkt[1] = n;
         uint8_t chk = n;
-        for (uint8_t i = 0; i < n; i++) chk ^= tel_cmd.data[i];
-        Serial.write((uint8_t)0xBB);
-        Serial.write(n);
-        Serial.write((const uint8_t *)tel_cmd.data, n);
-        Serial.write(chk);
-        tel_cmd.ready = false;
+        for (uint8_t i = 0; i < n; i++) {
+            uint8_t b = cmd_buf[cmd_head].data[i];
+            pkt[2 + i] = b;
+            chk ^= b;
+        }
+        pkt[2 + n] = chk;
+        Serial.write(pkt, 3 + n);           // single buffered write
+        cmd_head = (cmd_head + 1) & CMD_Q_MSK;
     }
 
-    // 2) Ring-Werte vom RPi empfangen
-    // Format: [0xAA][32 Bytes][XOR] = 34 Bytes
-    // Daten: ring_vals[0][0..3], ring_vals[1][0..3], ..., ring_vals[3][0..3]
+    // 2) Receive ring_vals state from RPi
+    // Format: [0xAA][32 bytes data][XOR checksum] = 34 bytes total
     while (Serial.available() > 0) {
         uint8_t b = (uint8_t)Serial.read();
 
