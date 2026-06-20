@@ -30,7 +30,7 @@ _CLOCK_RATE     = 4.0
 _MIN_PERIOD     = 2
 _MAX_PERIOD     = 64
 _FLASH_DUR      = 0.30
-_ENC_DIV        = 3
+_ENC_DIV        = 1
 _EDIT_DUR       = 1.5    # Sekunden Step-Grid-Anzeige nach Encoder-Drehung
 _DEFAULTS       = [32, 16, 8, 4]
 

@@ -1,166 +1,141 @@
 # Latenz-Analyse: Meadowphysics Multi-Ring (IIS 14)
 
-Letzte Messung / Annahmen: 2026-06-20  
-Hardware: Raspberry Pi A+ (700 MHz, 1 Core) · Arduino Nano V3.0 · Monome Arc 4 · Monome Teletype
+Letzte Messung: 2026-06-20  
+Hardware: Raspberry Pi A+ (700 MHz, 1 Core, ARMv6) · Arduino Nano V3.0 · Monome Arc 4 · Monome Teletype  
+Firmware: teletype_bridge.ino v2.2 · middleware v2.x
 
 ---
 
-## Signalkette: Teletype `IIS 88` → Arc-LED sichtbar
+## Gemessene Latenzen (SSH-Messskript)
+
+Messung auf `/dev/ttyUSB1` bei Teletype M100 (52 IIS-88-Pakete):
+
+| Kennzahl | RPi RX→TX Latenz | IIS-88-Abstände |
+|----------|-----------------|-----------------|
+| Min      | 2.60 ms         | 90.09 ms        |
+| Median   | 3.99 ms         | 99.87 ms        |
+| Mean     | 5.16 ms         | —               |
+| P95      | 12.55 ms        | —               |
+| Max      | 14.87 ms        | —               |
+| Stdev    | 2.95 ms         | —               |
+
+**RX→TX Latenz** = Zeit von `select()` wacht auf (IIS-88-Bytes im Kernel-Buffer) bis `ser.write()` abgeschlossen.  
+Der Median von ~4 ms setzt sich zusammen aus:
+- USB Full-Speed Polling-Overhead (write an FTDI-Chip): ~1–2 ms
+- Python State-Machine + Systemaufruf-Overhead: ~0.3 ms
+- 34-Byte UART-Übertragung zum Arduino: **2.95 ms** (festes physikalisches Limit)
+
+---
+
+## Warum Teletype IIQ sporadisch 0 zurückliefert
+
+### Vollständige Signalkette: IIS 88 → ring_vals aktuell
 
 ```
-Teletype                Arduino              RPi A+                  serialoscd            Arc
-   │                       │                    │                        │                  │
-   │─── I2C write ────────▶│                    │                        │                  │
-   │   (IIS 88 = 0x58)     │                    │                        │                  │
-   │   ~0.3 ms             │                    │                        │                  │
-   │                       │─── Serial TX ─────▶│                        │                  │
-   │                       │  4 Bytes @ 115200   │                        │                  │
-   │                       │   0.35 ms           │                        │                  │
-   │                       │                     │ _rx_loop wacht         │                  │
-   │                       │                     │ select() → <1 ms       │                  │
-   │                       │                     │ _do_step() + Event     │                  │
-   │                       │                     │ ~0.1 ms                │                  │
-   │                       │                     │                        │                  │
-   │                       │                     │ main thread wacht auf  │                  │
-   │                       │                     │ _tick_event: ~1-4 ms   │                  │
-   │                       │                     │ (OS Scheduler Jitter)  │                  │
-   │                       │                     │                        │                  │
-   │                       │                     │ update() + display()   │                  │
-   │                       │                     │ ~0.5 ms                │                  │
-   │                       │                     │                        │                  │
-   │                       │                     │─── UDP (localhost) ───▶│                  │
-   │                       │                     │  8× ring/set, <0.1 ms  │                  │
-   │                       │                     │                        │─── Serial TX ───▶│
-   │                       │                     │                        │  Ring 0: 6.9 ms  │
-   │                       │                     │                        │  Ring 1: 13.9 ms │
-   │                       │                     │                        │  Ring 2: 20.8 ms │
-   │                       │                     │                        │  Ring 3: 27.8 ms │
+Teletype          Arduino                RPi A+             Arduino (ring_vals)
+    │                 │                    │                       │
+    │── I2C Write ───▶│                    │                       │
+    │  IIS 88 (0x58)  │                    │                       │
+    │   ~0.3 ms       │── USB-Serial ─────▶│                       │
+    │                 │  [BB 01 58 59]     │                       │
+    │                 │  ~1.0 ms USB       │                       │
+    │                 │                    │ select() wacht         │
+    │                 │                    │ Python parst ~0.3ms    │
+    │                 │                    │── ser.write(34B) ─────▶│
+    │                 │                    │  ~1–2ms USB write      │
+    │                 │                    │                        │ erste 2 Bytes
+    │                 │                    │                        │ ring_vals[0][0] ✓
+    │                 │                    │                        │ +0.17ms
+    │                 │                    │                        │ ring_vals[1][0] ✓
+    │                 │                    │                        │ +0.87ms
+    │                 │                    │                        │ ring_vals[2][0] ✓
+    │                 │                    │                        │ +1.56ms
+    │                 │                    │                        │ ring_vals[3][0] ✓
+    │                 │                    │                        │ +2.26ms
+    │                 │                    │                          ↕ 2.95ms Draht gesamt
+    │
+    │── IIQ 20 ───────────────────────────▶│ onRequest()
+    │   I2C Read       0.8 ms nach IIS 88  │  liest ring_vals[0][0]
+    │── IIQ 30 ────────────────────────────│ 2.0 ms nach IIS 88
+    │── IIQ 40 ────────────────────────────│ 3.2 ms nach IIS 88
+    │── IIQ 50 ────────────────────────────│ 4.4 ms nach IIS 88
 ```
 
-### Latenzbudget (nach select()-Fix)
+### Timing-Budget
 
-| Segment | Dauer | Jitter |
-|---------|-------|--------|
-| Teletype I2C-Write → Arduino | ~0.3 ms | gering |
-| Arduino Serial TX (4 Bytes) | 0.35 ms | < 0.1 ms |
-| RPi Serial RX (select-wake) | < 1 ms | ± 0.5 ms |
-| Main Thread wakeup (OS-Scheduler) | 1–4 ms | ± 3 ms |
-| update() + display() | ~0.5 ms | < 0.2 ms |
-| UDP Loopback (localhost) | < 0.1 ms | vernachlässigbar |
-| serialoscd → Arc Ring 0 sichtbar | ~6.9 ms | ± 0.5 ms |
-| serialoscd → Arc Ring 3 sichtbar | ~27.8 ms | ± 0.5 ms |
-| **Gesamt Ring 0** | **~9–12 ms** | **± 4 ms** |
-| **Gesamt Ring 3** | **~30–33 ms** | **± 4 ms** |
+| | ring_vals bereit (P50) | ring_vals bereit (P95) | Teletype liest IIQ |
+|---|---|---|---|
+| Ring 0 | ~3.5 ms | ~12 ms | ~0.8 ms |
+| Ring 1 | ~4.2 ms | ~13 ms | ~2.0 ms |
+| Ring 2 | ~5.0 ms | ~14 ms | ~3.2 ms |
+| Ring 3 | ~5.8 ms | ~15 ms | ~4.4 ms |
 
-**Irreduzibler Ring-Spread**: 20.9 ms zwischen Ring 0 und Ring 3.  
-Ursache: OSC-Befehle werden von serialoscd sequentiell über eine einzige 115200-Baud-Leitung gesendet.
+**Ergebnis: ring_vals ist bei JEDEM IIQ-Read noch veraltet** (Median ~4ms Latenz vs. IIQ bei 0.8–4.4ms).
 
----
+### Warum Ring 0 trotzdem meistens funktioniert
 
-## Vor dem select()-Fix (sleep-basiert)
+`ring_vals[0][0]` enthält den Wert vom **vorherigen Tick**. Wenn Ring 0 jede Runde feuert (Periode = 1 oder sehr kurz), war `ring_vals[0][0] = 5000` schon beim letzten TX-Update gesetzt. Die Antwort ist korrekt — aber aus der vorigen Runde.
 
-| Segment | Alt (sleep) | Neu (select) |
-|---------|------------|--------------|
-| RPi Serial RX Latenz | ⌀ 5 ms, max 10 ms | ⌀ <1 ms, max ~1 ms |
-| Gesamtjitter pro Tick | **± 10 ms** | **± 4 ms** |
-| Hauptursache des Ruckelns | sleep(10ms) vor in_waiting-Check | OS-Scheduler (unvermeidlich) |
+Ringe mit längerer Periode feuern nicht jede Runde. Wenn Ring 2 in Tick N feuert, aber in Tick N-1 nicht gefeuert hat, steht `ring_vals[2][0] = 0` in den veralteten Daten → IIQ 40 gibt 0 zurück obwohl der Flash sichtbar ist.
 
----
+### Warum Encoder-Drehung die Aussetzer verschlimmert
 
-## Arc-Serielle Bandbreite (115200 Baud = 11.52 KB/s)
-
-### Paketgrößen
-
-| Pfad | Bytes | ms | Wann |
-|------|-------|-----|------|
-| ring/all | 32 | 2.8 | Flash-Animation (alle LEDs gleich) |
-| ring/set | 40 | 3.5 | Normal/Dot (1–8 LED-Änderungen) |
-| ring/all + 2× ring/set | 112 | 9.7 | Flash→Normal-Übergang (nach arc.py Fix) |
-| ring/map | 348 | 30.2 | Edit-Modus-Eintritt, Moduswechsel |
-| 4× ring/map (alt) | 1392 | 121 | Flash→Normal vor Fix — Hauptruckelursache |
-
-### Auslastung bei M50 (20 Ticks/s)
-
-| Szenario | KB/s | % Kapazität |
-|----------|------|------------|
-| 4 Ringe normal (2× ring/set je Ring) | 6.4 | 56 % |
-| 4 Ringe Flash (ring/all) | 3.2 | 28 % |
-| Peak (normal + Flash gleichzeitig) | 9.6 | **83 %** |
-| Flash→Normal-Burst (alt, ring/map ×4) | Impuls 1392 B | 121 ms blockiert |
-| Flash→Normal-Burst (neu, ring/all+sets) | Impuls 448 B | 39 ms |
-
-Bei M50 läuft der Arc-Serialbus an der Grenze. Paketloss durch serialoscd-Buffering ist bei > 83 % Auslastung möglich (keine Bestätigung, UDP wird schweigend verworfen).
-
----
-
-## Ring-Spread: das irreduzibler Hardware-Limit
-
-Alle 4 Ringe reagieren auf denselben IIS 88 Tick, aber serialoscd sendet sequentiell:
-
-```
-IIS 88 empfangen
-    ↓ (9 ms Gesamtpipeline)
-Ring 0 sichtbar    ████ 6.9 ms
-Ring 1 sichtbar    ░░░░████ 13.9 ms
-Ring 2 sichtbar    ░░░░░░░░████ 20.8 ms
-Ring 3 sichtbar    ░░░░░░░░░░░░████ 27.8 ms
-                                ↑
-                               27.8 ms Spread
-```
-
-Bei **M500** (500 ms Tick): Spread = 5.6 % der Tick-Periode → kaum wahrnehmbar.  
-Bei **M50** (50 ms Tick): Spread = 55 % der Tick-Periode → deutlich sichtbar.
-
-**Lösung existiert nicht** innerhalb des OSC/serialoscd-Protokolls. serialoscd bietet keinen Multi-Ring-Batch-Befehl. Die einzige Möglichkeit wäre, den Arc direkt über FTDI ohne serialoscd anzusprechen (direktes serielle Protokoll implementieren).
-
----
-
-## IIQ-Zuverlässigkeit
-
-### fired_until-Fenster
-
-```python
-_fired_until[i] = time.time() + _tick_interval * 1.5
-```
-
-| Tempo | Tick-Interval | Fired-Fenster | Ticks im Fenster |
-|-------|--------------|---------------|-----------------|
-| M50  | 50 ms | 75 ms | 1.5 ✓ |
-| M100 | 100 ms | 150 ms | 1.5 ✓ |
-| M500 | 500 ms | 750 ms | 1.5 ✓ |
-
-Das Fenster ist immer genau 1.5 Ticks breit, unabhängig vom Tempo.
-
-### TX-Pipeline zum Arduino
-
-| Schritt | Dauer |
-|---------|-------|
-| IIS 88 empfangen → `_last_send = 0.0` | sofort |
-| main thread wacht auf, `update_state()` baut TX-Paket | < 5 ms |
-| `_rx_loop` sendet TX (nächste 40-Hz-Slot) | < 25 ms |
-| Arduino erhält neues State-Paket | < 30 ms nach IIS 88 |
-| Teletype liest IIQ (typisch nach 1–5 ms) | State ist aktuell |
-
----
-
-## Bekannte Grenzen (nicht behebbar ohne Hardware-Änderung)
-
-1. **Ring-Spread 28 ms**: serialoscd schreibt sequentiell. Nur mit direktem FTDI-Zugang behebbar.
-2. **OS-Scheduler-Jitter 1–4 ms**: RPi A+ ist kein RTOS. Linux-Scheduler hat ~1 ms Timer-Granularität.
-3. **GIL-Contention**: Single-Core RPi A+ — RX-Thread und Main-Thread wechseln sich ab. Bei hoher Last kann der Jitter auf 5–10 ms steigen.
-4. **serialoscd als Black Box**: Keine Kontrolle über serialoscd's interne Latenz oder Pufferverhalten.
+Beim Encoder-Drehen sendet serialoscd ring/map-Pakete (Edit-Modus: 348 Bytes × 4 Ringe = 1392 Bytes über USB). Arc und Arduino teilen denselben USB-Hub. Schwere USB-Last auf `/dev/ttyUSB0` (Arc) verzögert den USB-Transfer auf `/dev/ttyUSB1` (Arduino). Die RX→TX-Latenz steigt von ~4ms auf ~10–15ms. Die Aussetzer häufen sich.
 
 ---
 
 ## Optimierungsverlauf
 
-| Datum | Maßnahme | Wirkung |
-|-------|---------|---------|
-| – | Ausgangszustand (ring/map für alles) | 4× 348 B = 121 ms pro Tick |
-| – | ring/set für Dot-Bewegung (≤8 LEDs) | 27.8 ms statt 121 ms |
-| – | ring/all für Flash-Animation | 11 ms statt 121 ms pro Flash-Frame |
-| – | _tick_event: main loop wacht sofort auf IIS 88 | Tick→Display: 40 ms → <5 ms |
-| – | _last_send = 0 vor clock_tick() | Race-Fix: sofortige TX nach Tick |
-| – | arc.py: uniform-old → ring/all+patches | Flash→Normal: 121 ms → 39 ms |
-| 2026-06-20 | select() statt sleep(10ms) in _rx_loop | RX-Latenz: ⌀5 ms → ⌀<1 ms |
-| 2026-06-20 | Debug-Log IIS 88 entfernt | Kein String-Alloc im Hot-Path |
+| Maßnahme | Effekt |
+|---------|--------|
+| v2.0: single slot, IIQ forward | IIQ belegte Slot → IIS 88 verloren |
+| v2.1: Circular Queue + IIQ-Filter | Keine IIQ-Drops mehr, saubere TX-Pakete |
+| select() statt sleep(10ms) | RX-Wake-Latenz: ~5ms → <1ms |
+| IIS 88 sofortiger TX (arduino-rx Thread) | Kein 25ms Hauptthread-Umweg |
+| v2.2: Progressives ring_vals[r][0] Update | ring_vals[r][0] früher bereit (innerhalb TX-Paket) |
+| Double-TX Fix (RX vor TX in _rx_loop) | Kein USART-Buffer-Overflow (68B > 64B) mehr |
+
+---
+
+## Grundsätzliche Grenzen (nicht behebbar ohne Hardware-Änderung)
+
+1. **IIQ liest stets veralteten State**: Teletype liest IIQ 0.8–4.4ms nach IIS 88. RPi braucht median 4ms + 2.95ms Draht = ~7ms um ring_vals zu aktualisieren. Die Lücke ist fundamental.
+
+2. **USB-Hub-Bottleneck**: Arc und Arduino teilen einen USB-FS-Hub. USB Full Speed Polling-Latenz = 1ms, bei Konflikt mehr.
+
+3. **OS-Scheduler-Jitter**: RPi A+ ist kein RTOS. Linux-Scheduler hat ~1ms Timer-Granularität; P95 der RX→TX-Latenz liegt bei 12.5ms.
+
+4. **serialoscd Black Box**: ring/map unter Encoder-Last (1392 Bytes) sättigt den USB-Hub und erhöht die Arduino-Serial-Latenz.
+
+---
+
+## Workaround-Empfehlung für Teletype-Skripte
+
+IIQ im **nächsten** METRO-Zyklus lesen statt im gleichen:
+
+```
+; METRO M100 Skript:
+IIS 49 88       ; Tick auslösen
+                ; ring_vals jetzt noch vom letzten Tick
+IIQ 49 20 → A  ; liest den State des VORHERIGEN Ticks
+```
+
+Oder mit DEL:
+
+```
+IIS 49 88
+DEL 8           ; 8ms warten → ring_vals wurde aktualisiert
+IIQ 49 20 → A  ; liest aktuellen State
+```
+
+Bei M100 (10 Hz) sind 8ms DEL = 8% des Tick-Abstands. Musikalisch kaum hörbar, löst aber den Timing-Konflikt zuverlässig.
+
+---
+
+## Messskript
+
+```bash
+# Middleware stoppen, dann:
+ssh seek@monome-arc.local \
+  "python3 ~/arc-middleware/scripts/measure_latency.py 30"
+```

@@ -108,6 +108,7 @@ class ArduinoSerialHandler:
         self._pending_cmd: Optional[int] = None
         self._pending_hi:  Optional[int] = None
         self._last_send   = 0.0
+        self._last_rx_tx  = 0.0   # last TX from _rx_loop or IIS 88 handler (same thread)
         self._last_iis88  = 0.0   # debounce: suppress duplicate IIS 88 within 5ms
 
         # TX: main thread deposits latest state here, serial thread sends it
@@ -196,7 +197,6 @@ class ArduinoSerialHandler:
         state            = "IDLE"
         cmd_len          = 0
         cmd_buf: list[int] = []
-        last_tx          = 0.0
         consec_errors    = 0       # Backoff bei dauerhaftem Checksum-Fehler-Flood
 
         while self._running:
@@ -205,71 +205,71 @@ class ArduinoSerialHandler:
                     time.sleep(0.1)
                     continue
 
-                # TX: send queued state at 40 Hz from this thread only
-                now = time.time()
-                if now - last_tx >= 0.025:
-                    try:
-                        tx = self._tx_queue.get_nowait()
-                        self._send_packet(tx)
-                    except _queue.Empty:
-                        pass
-                    last_tx = now
-
-                # select() statt sleep(): wacht sofort auf wenn Daten ankommen
-                # → IIS 88 Latenz von ≤10ms auf <1ms reduziert
+                # RX zuerst — IIS 88 Handler sendet sofort und setzt self._last_rx_tx.
+                # TX danach — so weiß die Gate, ob IIS 88 schon gesendet hat.
+                # Reihenfolge TX→RX würde double-TX erzeugen: _rx_loop sendet aus Queue,
+                # dann kommt IIS 88 und sendet nochmals → 68 Bytes, Arduino USART-Overflow.
                 wait = 0.050 if consec_errors > 20 else 0.010
                 try:
                     readable, _, _ = _select.select([self._ser], [], [], wait)
                 except (ValueError, OSError):
                     break
-                if not readable:
-                    continue
 
-                available = self._ser.in_waiting
-                if not available:
-                    continue
-                raw = self._ser.read(min(available, 256))
+                if readable:
+                    available = self._ser.in_waiting
+                    if available:
+                        raw = self._ser.read(min(available, 256))
+                        for b in raw:
+                            if state == "IDLE":
+                                if b == RX_HEADER:
+                                    state = "LEN"
+                                elif b in (0x54, 0x45):  # 'T' oder 'E' = startup-Text
+                                    state = "TEXT"
 
-                for b in raw:
-                    if state == "IDLE":
-                        if b == RX_HEADER:
-                            state = "LEN"
-                        elif b in (0x54, 0x45):  # 'T' oder 'E' = startup-Text
-                            state = "TEXT"
+                            elif state == "TEXT":
+                                if b == 0x0A:
+                                    state = "IDLE"
 
-                    elif state == "TEXT":
-                        if b == 0x0A:
-                            state = "IDLE"
+                            elif state == "LEN":
+                                cmd_len = b
+                                cmd_buf = []
+                                if cmd_len == 0:
+                                    state = "IDLE"
+                                else:
+                                    state = "DATA"
 
-                    elif state == "LEN":
-                        cmd_len = b
-                        cmd_buf = []
-                        if cmd_len == 0:
-                            state = "IDLE"
-                        else:
-                            state = "DATA"
+                            elif state == "DATA":
+                                cmd_buf.append(b)
+                                if len(cmd_buf) == cmd_len:
+                                    state = "CHK"
 
-                    elif state == "DATA":
-                        cmd_buf.append(b)
-                        if len(cmd_buf) == cmd_len:
-                            state = "CHK"
+                            elif state == "CHK":
+                                chk = cmd_len
+                                for x in cmd_buf:
+                                    chk ^= x
+                                if chk == b:
+                                    self._handle_rx(bytes(cmd_buf))
+                                    consec_errors = 0
+                                else:
+                                    consec_errors += 1
+                                    self._chk_err_count += 1
+                                    now = time.time()
+                                    if now - self._chk_err_logged >= 1.0:
+                                        logger.warning(f"RX Checksum-Fehler ×{self._chk_err_count}")
+                                        self._chk_err_count = 0
+                                        self._chk_err_logged = now
+                                state = "IDLE"
 
-                    elif state == "CHK":
-                        chk = cmd_len
-                        for x in cmd_buf:
-                            chk ^= x
-                        if chk == b:
-                            self._handle_rx(bytes(cmd_buf))
-                            consec_errors = 0
-                        else:
-                            consec_errors += 1
-                            self._chk_err_count += 1
-                            now = time.time()
-                            if now - self._chk_err_logged >= 1.0:
-                                logger.warning(f"RX Checksum-Fehler ×{self._chk_err_count}")
-                                self._chk_err_count = 0
-                                self._chk_err_logged = now
-                        state = "IDLE"
+                # TX nach RX: falls IIS 88 Handler bereits gesendet hat, ist
+                # self._last_rx_tx frisch gesetzt → Gate sperrt doppelten Send.
+                now = time.time()
+                if now - self._last_rx_tx >= 0.025:
+                    try:
+                        tx = self._tx_queue.get_nowait()
+                        self._send_packet(tx)
+                    except _queue.Empty:
+                        pass
+                    self._last_rx_tx = now
 
             except serial.SerialException as e:
                 logger.error(f"RX loop serial error: {e}")
@@ -329,7 +329,8 @@ class ArduinoSerialHandler:
                     pass
                 tx = self._build_tx(self._app)
                 self._send_packet(tx)
-                self._last_send = time.time()  # suppress update_state() for 25ms
+                self._last_send   = time.time()  # suppress update_state() for 25ms
+                self._last_rx_tx  = self._last_send  # suppress _rx_loop TX gate for 25ms
         elif cmd == 89:
             logger.info("IIS 89: Meadowphysics Reset")
             if self._app:
