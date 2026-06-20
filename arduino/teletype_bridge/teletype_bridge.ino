@@ -1,5 +1,5 @@
 /*
- * teletype_bridge.ino  v2.1
+ * teletype_bridge.ino  v2.2
  *
  * Fixes vs v2.0:
  *   - IIQ queries (cmd 20-53) no longer occupy the forward-queue.
@@ -109,7 +109,7 @@ void setup() {
     Wire.onRequest(onRequest);
     Serial.begin(BAUD);
     delay(100);
-    Serial.print("TELETYPE_BRIDGE v2.1 addr=0x");
+    Serial.print("TELETYPE_BRIDGE v2.2 addr=0x");
     Serial.println(I2C_ADDR, HEX);
 }
 
@@ -135,6 +135,13 @@ void loop() {
 
     // 2) Receive ring_vals state from RPi
     // Format: [0xAA][32 bytes data][XOR checksum] = 34 bytes total
+    //
+    // Progressive state-0 update: TX layout is R0[s0,s1,s2,s3], R1[...], R2[...], R3[...]
+    // so ring r state 0 is at ser_buf[r*8 .. r*8+1].
+    // We update ring_vals[r][0] (fired state) as soon as those 2 bytes arrive,
+    // without waiting for the full 34-byte packet. This cuts the IIQ read latency
+    // from ~3.8ms (full packet) to ~1.0-3.1ms per ring — Teletype IIQ reads happen
+    // at ~1.4/2.8/4.2/5.6ms after IIS 88, so all rings get fresh state in time.
     while (Serial.available() > 0) {
         uint8_t b = (uint8_t)Serial.read();
 
@@ -145,6 +152,18 @@ void loop() {
 
         ser_buf[ser_pos - 1] = b;
         ser_pos++;
+
+        // After receiving the low byte of ring r state 0, update ring_vals[r][0].
+        // Ring r state 0 lo byte is at ser_buf[r*8+1], stored when ser_pos reaches r*8+3.
+        for (uint8_t r = 0; r < N_RINGS; r++) {
+            if (ser_pos == (uint8_t)(r * 8 + 3)) {
+                uint8_t idx = r * 8;
+                int16_t val = (int16_t)(((uint16_t)ser_buf[idx] << 8) | ser_buf[idx + 1]);
+                noInterrupts();
+                ring_vals[r][0] = val;
+                interrupts();
+            }
+        }
 
         if (ser_pos == 34) {
             uint8_t chk = 0;
