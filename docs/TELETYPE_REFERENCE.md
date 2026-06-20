@@ -66,47 +66,23 @@ Aktivieren eines Multi-Ring-Modus übernimmt alle 4 Ringe. Einzel-Ring-Modi werd
 
 ### Switch Mode — Single Ring
 
-Teletype's `IIS` sendet einen **16-bit Integer**. Der Arduino leitet den vollen Wert weiter.  
-Decode: `Ring = Wert ÷ 100 − 1`, `Mode = Wert mod 100`
-
-| IIS | Ring | Mode |
-|-----|------|------|
-| 101 | 1 | Cycles |
-| 102 | 1 | Pendulum |
-| 103 | 1 | Gravity |
-| 104 | 1 | Spring |
-| 105 | 1 | Orbit |
-| 106 | 1 | Swing |
-| 107 | 1 | Euclidean |
-| 108 | 1 | Bounce |
-| 109 | 1 | Drunk |
-| 110 | 1 | Chaos |
-| 111 | 1 | Probability |
-| 201 | 2 | Cycles |
-| … | … | … |
-| 211 | 2 | Probability |
-| 301 | 3 | Cycles |
-| … | … | … |
-| 311 | 3 | Probability |
-| 401 | 4 | Cycles |
-| … | … | … |
-| 411 | 4 | Probability |
-
-Vollständige Tabelle (alle 4 Ringe × 11 Modi = 44 Codes):
+Teletype's `IIS` sendet einen Byte-Wert. Decode: `ring = (val−101) ÷ 20`, `mode = (val−101) mod 20 + 1`
 
 | Mode | Ring 1 | Ring 2 | Ring 3 | Ring 4 |
 |------|--------|--------|--------|--------|
-| Cycles      | 101 | 201 | 301 | 401 |
-| Pendulum    | 102 | 202 | 302 | 402 |
-| Gravity     | 103 | 203 | 303 | 403 |
-| Spring      | 104 | 204 | 304 | 404 |
-| Orbit       | 105 | 205 | 305 | 405 |
-| Swing       | 106 | 206 | 306 | 406 |
-| Euclidean   | 107 | 207 | 307 | 407 |
-| Bounce      | 108 | 208 | 308 | 408 |
-| Drunk       | 109 | 209 | 309 | 409 |
-| Chaos       | 110 | 210 | 310 | 410 |
-| Probability | 111 | 211 | 311 | 411 |
+| Cycles      | 101 | 121 | 141 | 161 |
+| Pendulum    | 102 | 122 | 142 | 162 |
+| Gravity     | 103 | 123 | 143 | 163 |
+| Spring      | 104 | 124 | 144 | 164 |
+| Orbit       | 105 | 125 | 145 | 165 |
+| Swing       | 106 | 126 | 146 | 166 |
+| Euclidean   | 107 | 127 | 147 | 167 |
+| Bounce      | 108 | 128 | 148 | 168 |
+| Drunk       | 109 | 129 | 149 | 169 |
+| Chaos       | 110 | 130 | 150 | 170 |
+| Probability | 111 | 131 | 151 | 171 |
+
+Werte 112–120, 132–140, 152–160 sind Lücken — ohne Wirkung.
 
 ### Arc Orientation
 

@@ -30,10 +30,10 @@ IIS-Befehle (Multi-Ring-Modi):
 
 IIS-Befehle (einzelner Ring):
   IIS 49 101..111 → Ring 1 Modus 1..11
-  IIS 49 201..211 → Ring 2 Modus 1..11
-  IIS 49 301..311 → Ring 3 Modus 1..11
-  IIS 49 401..411 → Ring 4 Modus 1..11
-  (Teletype sendet 16-bit; Decode: ring = val//100 - 1, mode = val%100)
+  IIS 49 121..131 → Ring 2 Modus 1..11
+  IIS 49 141..151 → Ring 3 Modus 1..11
+  IIS 49 161..171 → Ring 4 Modus 1..11
+  (Decode: ring = (val-101)//20, mode = (val-101)%20+1; Lücken 112-120, 132-140, 152-160)
 
 IIS-Befehle (System):
   IIS 49 90/91  → ARC-Ausrichtung (0°/270°)
@@ -272,6 +272,16 @@ class ArduinoSerialHandler:
             logger.debug("IIS 15: reserviert")
         elif cmd == 88:
             logger.debug("IIS 88: Clock Tick")
+        # ── Per-ring mode switch: IIS 101–171 ────────────────────────────
+        # Formel: ring = (cmd-101)//20,  mode = (cmd-101)%20 + 1
+        # Ring 1: 101–111  Ring 2: 121–131  Ring 3: 141–151  Ring 4: 161–171
+        elif 101 <= cmd <= 171:
+            ring     = (cmd - 101) // 20
+            mode_idx = (cmd - 101) % 20 + 1
+            if self._app and 0 <= ring <= 3 and 1 <= mode_idx <= len(MODE_NAMES):
+                name = MODE_NAMES[mode_idx - 1]
+                self._app.set_ring_mode(ring, name)
+                logger.info(f"IIS Ring {ring + 1} → {name}")
         # ── System ──────────────────────────────────────────────────────
         elif cmd == 90 and self._app:
             self._app.set_arc_orientation(0)
@@ -286,18 +296,6 @@ class ArduinoSerialHandler:
 
         if self._pending_cmd is not None:
             self._dispatch_second_byte(hi, lo)
-            return
-
-        # Per-Ring Modus: IIS 1xx / 2xx / 3xx / 4xx (16-bit, alle 11 Modi)
-        # Teletype sendet 16-bit → Arduino leitet hi+lo weiter
-        # Decode: ring = val//100 - 1,  mode = val%100
-        full_val = (hi << 8) | lo
-        ring     = full_val // 100 - 1
-        mode_idx = full_val % 100
-        if app and 0 <= ring <= 3 and 1 <= mode_idx <= len(MODE_NAMES):
-            name = MODE_NAMES[mode_idx - 1]
-            app.set_ring_mode(ring, name)
-            logger.info(f"IIS Ring {ring + 1} → {name}")
             return
 
         cmd = hi
